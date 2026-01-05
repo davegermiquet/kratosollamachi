@@ -6,50 +6,53 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+
 	"github.com/davegermiquet/kratos-chi-ollama/config"
 	"github.com/davegermiquet/kratos-chi-ollama/internal/auth"
 	"github.com/davegermiquet/kratos-chi-ollama/internal/handlers"
 	"github.com/davegermiquet/kratos-chi-ollama/internal/langchain"
-	mw "github.com/davegermiquet/kratos-chi-ollama/internal/middleware"
+	"github.com/davegermiquet/kratos-chi-ollama/internal/middleware"
+	"github.com/davegermiquet/kratos-chi-ollama/internal/response"
 )
 
 func main() {
 	// Load configuration
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
 
-	// Initialize clients
-	kratosClient := auth.NewKratosClient(cfg.KratosPublicURL, cfg.KratosAdminURL)
+	// Initialize dependencies
+	kratosClient := auth.NewKratosClient(cfg.Kratos.PublicURL, cfg.Kratos.AdminURL)
 
 	llmClient, err := langchain.NewClient(langchain.Config{
-		Provider: cfg.LLMProvider,
-		Model:    cfg.LLMModel,
-		BaseURL:  cfg.LLMBaseURL,
-		APIKey:   cfg.LLMAPIKey,
+		Provider: langchain.Provider(cfg.LLM.Provider),
+		Model:    cfg.LLM.Model,
+		BaseURL:  cfg.LLM.BaseURL,
+		APIKey:   cfg.LLM.APIKey,
 	})
 	if err != nil {
-		log.Fatalf("Failed to initialize LLM client: %v", err)
+		log.Fatalf("Failed to create LLM client: %v", err)
 	}
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(kratosClient)
 	llmHandler := handlers.NewLLMHandler(llmClient)
 
-	// Setup Chi router
+	// Create router
 	r := chi.NewRouter()
 
-	// Middleware stack
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	// Global middleware
+	r.Use(chimiddleware.RequestID)
+	r.Use(chimiddleware.RealIP)
+	r.Use(chimiddleware.Logger)
 	r.Use(middleware.Recoverer)
-
-	// CORS configuration
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   cfg.AllowedOrigins,
+		AllowedOrigins:   cfg.CORS.AllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Session-Token"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -57,43 +60,33 @@ func main() {
 
 	// Health check endpoint
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("OK"))
-	})
-
-	// Public auth routes (no authentication required)
-	r.Route("/auth", func(r chi.Router) {
-		r.Get("/login", authHandler.CreateLoginFlow)
-		r.Post("/login/flow", authHandler.GetLoginFlow)
-		r.Get("/registration", authHandler.CreateRegistrationFlow)
-		r.Post("/registration/flow", authHandler.GetRegistrationFlow)
-	})
-
-	// Protected auth routes (authentication required)
-	r.Group(func(r chi.Router) {
-		r.Use(mw.AuthMiddleware(kratosClient))
-		r.Post("/auth/logout", authHandler.Logout)
-		r.Get("/auth/whoami", authHandler.WhoAmI)
-	})
-
-	// Protected LLM routes (authentication required)
-	r.Group(func(r chi.Router) {
-		r.Use(mw.AuthMiddleware(kratosClient))
-
-		r.Route("/llm", func(r chi.Router) {
-			r.Post("/chat", llmHandler.Chat)
-			r.Post("/generate", llmHandler.Generate)
+		response.Success(w, response.HealthResponse{
+			Status:  "healthy",
+			Version: "1.0.0",
 		})
 	})
 
-	// Start server
-	addr := fmt.Sprintf(":%s", cfg.Port)
-	log.Printf("Starting server on %s", addr)
-	log.Printf("Environment: %s", cfg.Environment)
-	log.Printf("Kratos Public URL: %s", cfg.KratosPublicURL)
-	log.Printf("LLM Provider: %s", cfg.LLMProvider)
-	log.Printf("LLM Model: %s", cfg.LLMModel)
+	// Public auth routes
+	r.Route("/auth", func(r chi.Router) {
+		r.Get("/login", authHandler.CreateLoginFlow)
+		r.Post("/login/flow", authHandler.SubmitLogin)
+		r.Get("/registration", authHandler.CreateRegistrationFlow)
+		r.Post("/registration/flow", authHandler.SubmitRegistration)
+	})
 
+	// Protected LLM routes
+	r.Route("/llm", func(r chi.Router) {
+		r.Use(middleware.AuthMiddleware(kratosClient))
+		r.Post("/chat", llmHandler.Chat)
+		r.Post("/generate", llmHandler.Generate)
+		r.Get("/whoami", authHandler.WhoAmI)
+		r.Post("/logout", authHandler.Logout)
+	})
+
+	// Start server
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	log.Printf("Starting server on %s in %s mode", addr, cfg.Server.Environment)
 	if err := http.ListenAndServe(addr, r); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Server failed: %v", err)
 	}
 }

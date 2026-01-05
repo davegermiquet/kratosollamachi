@@ -1,110 +1,65 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/davegermiquet/kratos-chi-ollama/internal/langchain"
-	"github.com/tmc/langchaingo/llms"
+	"github.com/davegermiquet/kratos-chi-ollama/internal/response"
+	"github.com/davegermiquet/kratos-chi-ollama/internal/validation"
+	apperrors "github.com/davegermiquet/kratos-chi-ollama/pkg/errors"
 )
 
+// LLMHandler handles LLM-related requests
 type LLMHandler struct {
-	client *langchain.Client
+	llm langchain.LLMService
 }
 
-func NewLLMHandler(client *langchain.Client) *LLMHandler {
-	return &LLMHandler{client: client}
-}
-
-// Message represents a chat message
-type Message struct {
-	Role    string `json:"role"`    // "user", "assistant", "system"
-	Content string `json:"content"`
-}
-
-// ChatRequest represents the incoming chat request
-type ChatRequest struct {
-	Messages []Message `json:"messages"`
-}
-
-// ChatResponse represents the chat response
-type ChatResponse struct {
-	Content string `json:"content"`
-}
-
-// GenerateRequest represents the incoming generation request
-type GenerateRequest struct {
-	Prompt string `json:"prompt"`
-}
-
-// GenerateResponse represents the generation response
-type GenerateResponse struct {
-	Content string `json:"content"`
+// NewLLMHandler creates a new LLM handler
+func NewLLMHandler(llm langchain.LLMService) *LLMHandler {
+	return &LLMHandler{llm: llm}
 }
 
 // Chat handles POST /llm/chat
 func (h *LLMHandler) Chat(w http.ResponseWriter, r *http.Request) {
-	var req ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	input, err := validation.ValidateChatInput(r.Body)
+	if err != nil {
+		err.WriteJSON(w)
 		return
 	}
 
-	if len(req.Messages) == 0 {
-		http.Error(w, "Messages array cannot be empty", http.StatusBadRequest)
-		return
-	}
-
-	// Convert messages to langchaingo format
-	var messages []llms.MessageContent
-	for _, msg := range req.Messages {
-		var role llms.ChatMessageType
-		switch msg.Role {
-		case "system":
-			role = llms.ChatMessageTypeSystem
-		case "assistant":
-			role = llms.ChatMessageTypeAI
-		case "user":
-			role = llms.ChatMessageTypeHuman
-		default:
-			role = llms.ChatMessageTypeHuman
-		}
-
-		messages = append(messages, llms.MessageContent{
-			Role: role,
-			Parts: []llms.ContentPart{
-				llms.TextContent{Text: msg.Content},
-			},
+	// Convert to langchain message format
+	messages := make([]langchain.ChatMessage, 0, len(input.Messages))
+	for _, msg := range input.Messages {
+		messages = append(messages, langchain.ChatMessage{
+			Role:    langchain.MessageRole(msg.Role),
+			Content: msg.Content,
 		})
 	}
 
-	content, err := h.client.Chat(r.Context(), messages)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	llmMessages := langchain.ConvertMessages(messages)
+
+	content, chatErr := h.llm.Chat(r.Context(), llmMessages)
+	if chatErr != nil {
+		apperrors.NewServiceUnavailableError("LLM", chatErr).WriteJSON(w)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, ChatResponse{Content: content})
+	response.Success(w, response.ChatResponse{Content: content})
 }
 
 // Generate handles POST /llm/generate
 func (h *LLMHandler) Generate(w http.ResponseWriter, r *http.Request) {
-	var req GenerateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if req.Prompt == "" {
-		http.Error(w, "Prompt cannot be empty", http.StatusBadRequest)
-		return
-	}
-
-	content, err := h.client.GenerateContent(r.Context(), req.Prompt)
+	input, err := validation.ValidateGenerateInput(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		err.WriteJSON(w)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, GenerateResponse{Content: content})
+	content, genErr := h.llm.GenerateContent(r.Context(), input.Prompt)
+	if genErr != nil {
+		apperrors.NewServiceUnavailableError("LLM", genErr).WriteJSON(w)
+		return
+	}
+
+	response.Success(w, response.GenerateResponse{Content: content})
 }

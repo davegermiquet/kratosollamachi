@@ -1,227 +1,145 @@
 package handlers
 
 import (
-	"io"
-	"fmt"
-	"encoding/json"
 	"net/http"
+
 	"github.com/davegermiquet/kratos-chi-ollama/internal/auth"
-	ory "github.com/ory/client-go"
+	"github.com/davegermiquet/kratos-chi-ollama/internal/middleware"
+	"github.com/davegermiquet/kratos-chi-ollama/internal/response"
+	"github.com/davegermiquet/kratos-chi-ollama/internal/validation"
+	apperrors "github.com/davegermiquet/kratos-chi-ollama/pkg/errors"
 )
 
+// AuthHandler handles authentication-related requests
 type AuthHandler struct {
-	kratos *auth.KratosClient
+	kratos auth.KratosService
 }
 
-func NewAuthHandler(kratos *auth.KratosClient) *AuthHandler {
+// NewAuthHandler creates a new auth handler
+func NewAuthHandler(kratos auth.KratosService) *AuthHandler {
 	return &AuthHandler{kratos: kratos}
 }
 
 // CreateLoginFlow handles GET /auth/login
 func (h *AuthHandler) CreateLoginFlow(w http.ResponseWriter, r *http.Request) {
-
 	flow, err := h.kratos.CreateLoginFlow(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		apperrors.NewServiceUnavailableError("Kratos", err).WriteJSON(w)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, flow)
+	response.Success(w, flow)
 }
 
-// GetLoginFlow handles POST /auth/login/flow
-func (h *AuthHandler) GetLoginFlow(w http.ResponseWriter, r *http.Request) {
+// SubmitLogin handles POST /auth/login/flow
+func (h *AuthHandler) SubmitLogin(w http.ResponseWriter, r *http.Request) {
 	flowID := r.URL.Query().Get("flow")
-	if flowID == "" {
-		http.Error(w, "flow parameter is required", http.StatusBadRequest)
+	if err := validation.ValidateFlowID(flowID); err != nil {
+		err.WriteJSON(w)
 		return
 	}
-	bodyBytes, err := io.ReadAll(r.Body)
-	bodyString := string(bodyBytes)
-	fmt.Println(bodyString)
-	var data map[string]interface{}
-    err = json.Unmarshal([]byte(bodyString), &data)
-    if err != nil {
-        http.Error(w, "Invalid JSON", http.StatusBadRequest)
-        return
-    }
-	updateBody := ory.UpdateLoginFlowBody{
-		UpdateLoginFlowWithPasswordMethod: &ory.UpdateLoginFlowWithPasswordMethod{
-			Method:     "password",
-			Identifier: data["email"].(string),
-			Password:   data["pass"].(string),
-		},
+
+	input, validationErr := validation.ValidateLoginInput(r.Body)
+	if validationErr != nil {
+		validationErr.WriteJSON(w)
+		return
 	}
-	flow, err := h.kratos.GetLoginFlow(r.Context(), flowID,updateBody)
+
+	loginBody := auth.BuildPasswordLoginBody(input.Email, input.Password)
+
+	result, err := h.kratos.UpdateLoginFlow(r.Context(), flowID, loginBody)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		apperrors.NewUnauthorizedError("invalid credentials").WriteJSON(w)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, flow)
+	response.Success(w, result)
 }
 
-func extractCSRFToken(flow *ory.RegistrationFlow) string {
-	if flow == nil || flow.Ui.Nodes == nil {
-		return ""
-	}
-
-	for _, node := range flow.Ui.Nodes {
-		// Check if this is an input node
-		if node.Attributes.UiNodeInputAttributes != nil {
-			attrs := node.Attributes.UiNodeInputAttributes
-			
-			// Look for the csrf_token field
-			if attrs.Name == "csrf_token" {
-				// The value could be string or interface{}, handle both
-				switch v := attrs.Value.(type) {
-				case string:
-					return v
-				default:
-					// If it's another type, try to convert
-					if str, ok := v.(string); ok {
-						return str
-					}
-				}
-			}
-		}
-	}
-	
-	return ""
-}
 // CreateRegistrationFlow handles GET /auth/registration
 func (h *AuthHandler) CreateRegistrationFlow(w http.ResponseWriter, r *http.Request) {
-
-	flow, _ := h.kratos.CreateRegistrationFlow(r.Context())
-	fmt.Println(flow)
-	csrfToken := extractCSRFToken(flow)
-
-	// Build a cleaner response
-	response := map[string]interface{}{
-		"flow_id":    flow.Id,
-		"csrf_token": csrfToken,
-		"expires_at": flow.ExpiresAt,
-		"action":     flow.Ui.Action,
-		"method":     flow.Ui.Method,
-		"fields":     extractFormFields(flow),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-// Helper to extract form fields for easier frontend consumption
-func extractFormFields(flow *ory.RegistrationFlow) []map[string]interface{} {
-	fields := []map[string]interface{}{}
-	
-	for _, node := range flow.Ui.Nodes {
-		if node.Attributes.UiNodeInputAttributes != nil {
-			attrs := node.Attributes.UiNodeInputAttributes
-			
-			field := map[string]interface{}{
-				"name":     attrs.Name,
-				"type":     attrs.Type,
-				"required": attrs.GetRequired(),
-				"value":    attrs.Value,
-			}
-			
-			// Add label if available
-			if node.Meta.Label != nil {
-				field["label"] = node.Meta.Label.Text
-			}
-			
-			fields = append(fields, field)
-		}
-	}
-	
-	return fields
-}
-
-// GetRegistrationFlow handles GET /auth/registration/flow
-func (h *AuthHandler) GetRegistrationFlow(w http.ResponseWriter, r *http.Request) {
-	flowID := r.URL.Query().Get("flow")
-	if flowID == "" {
-		http.Error(w, "flow parameter is required", http.StatusBadRequest)
-		return
-	}
-	fmt.Println(flowID)
-	bodyBytes, err := io.ReadAll(r.Body)
-	bodyString := string(bodyBytes)
-	fmt.Println(bodyString)
-	var data map[string]interface{}
-    err = json.Unmarshal([]byte(bodyString), &data)
-    if err != nil {
-        http.Error(w, "Invalid JSON", http.StatusBadRequest)
-        return
-    }
-    
-    traits := map[string]interface{}{
-    "email": data["email"],
-    "name": map[string]string{
-        "first": data["first_name"].(string),
-        "last":  data["last_name"].(string),
-    },
-	}
-	flowBody := ory.UpdateRegistrationFlowBody{}
-	flowBody.UpdateRegistrationFlowWithPasswordMethod = &ory.UpdateRegistrationFlowWithPasswordMethod{
-    Method:   "password",
-    Password: data["pass"].(string),
-    Traits:   traits,
-	}
-
-	flow, err := h.kratos.GetRegistrationFlow(r.Context(), flowID,flowBody)
-	fmt.Println(flow)
+	flow, err := h.kratos.CreateRegistrationFlow(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		apperrors.NewServiceUnavailableError("Kratos", err).WriteJSON(w)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, flow)
+	// Build clean response
+	resp := response.RegistrationFlowResponse{
+		FlowID:    flow.Id,
+		CSRFToken: auth.ExtractCSRFToken(flow),
+		Action:    flow.Ui.Action,
+		Method:    flow.Ui.Method,
+		Fields:    auth.ExtractFormFields(flow),
+	}
+
+	if !flow.ExpiresAt.IsZero() {
+		resp.ExpiresAt = flow.ExpiresAt.String()
+	}
+
+	response.Success(w, resp)
+}
+
+// SubmitRegistration handles POST /auth/registration/flow
+func (h *AuthHandler) SubmitRegistration(w http.ResponseWriter, r *http.Request) {
+	flowID := r.URL.Query().Get("flow")
+	if err := validation.ValidateFlowID(flowID); err != nil {
+		err.WriteJSON(w)
+		return
+	}
+
+	input, validationErr := validation.ValidateRegistrationInput(r.Body)
+	if validationErr != nil {
+		validationErr.WriteJSON(w)
+		return
+	}
+
+	regBody := auth.BuildPasswordRegistrationBody(
+		input.Email,
+		input.Password,
+		input.FirstName,
+		input.LastName,
+	)
+
+	result, err := h.kratos.UpdateRegistrationFlow(r.Context(), flowID, regBody)
+	if err != nil {
+		apperrors.NewInternalError("registration failed", err).WriteJSON(w)
+		return
+	}
+
+	response.Created(w, result)
 }
 
 // Logout handles POST /auth/logout
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	cookie := r.Header.Get("Cookie")
-
-	flow, err := h.kratos.CreateLogoutFlow(r.Context(), cookie)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if cookie == "" {
+		apperrors.NewBadRequestError("no session cookie provided").WriteJSON(w)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, flow)
+	flow, err := h.kratos.CreateLogoutFlow(r.Context(), cookie)
+	if err != nil {
+		apperrors.NewInternalError("failed to create logout flow", err).WriteJSON(w)
+		return
+	}
+
+	response.Success(w, flow)
 }
 
 // WhoAmI handles GET /auth/whoami - returns current session
 func (h *AuthHandler) WhoAmI(w http.ResponseWriter, r *http.Request) {
-
-	sessionToken:=getSessionToken(r)
+	sessionToken := middleware.ExtractSessionToken(r)
 	if sessionToken == "" {
-		http.Error(w, "No session token provided", http.StatusUnauthorized)
+		apperrors.NewUnauthorizedError("no session token provided").WriteJSON(w)
 		return
 	}
-	session, err := h.kratos.Validate_Session(r.Context(),sessionToken)
 
-	
+	session, err := h.kratos.ValidateSession(r.Context(), sessionToken)
 	if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			http.Error(w, "Failed to verify session: "+err.Error(), http.StatusInternalServerError)
-			return 
-		}
-	  respondJSON(w, http.StatusOK, session)
-}
-
-func getSessionToken(r *http.Request) string  {
-	// 1. Try X-Session-Token header (recommended for APIs)
-	if token := r.Header.Get("X-Session-Token"); token != "" {
-		return token
+		apperrors.NewUnauthorizedError("invalid or expired session").WriteJSON(w)
+		return
 	}
 
-	return ""
-}
-func respondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	response.Success(w, session)
 }

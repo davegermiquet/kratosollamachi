@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
+
 	ory "github.com/ory/client-go"
 )
 
+// KratosClient implements KratosService interface
 type KratosClient struct {
 	frontend *ory.APIClient
 	admin    *ory.APIClient
 }
 
+// Ensure KratosClient implements KratosService
+var _ KratosService = (*KratosClient)(nil)
+
+// NewKratosClient creates a new Kratos client
 func NewKratosClient(publicURL, adminURL string) *KratosClient {
 	frontendConfig := ory.NewConfiguration()
 	frontendConfig.Servers = ory.ServerConfigurations{
@@ -30,21 +35,19 @@ func NewKratosClient(publicURL, adminURL string) *KratosClient {
 	}
 }
 
-// ToSession validates a session cookie or token and returns the session
-func (k *KratosClient) ToSession(ctx context.Context, cookie string, token string) (*ory.Session, error) {
-	req := k.frontend.FrontendAPI.ToSession(ctx)
-
-	if cookie != "" {
-		req = req.Cookie(cookie)
-	}
-	if token != "" {
-		req = req.XSessionToken(token)
+// ValidateSession validates a session token and returns the session
+func (k *KratosClient) ValidateSession(ctx context.Context, sessionToken string) (*ory.Session, error) {
+	if sessionToken == "" {
+		return nil, fmt.Errorf("session token is required")
 	}
 
-	session, resp, err := req.Execute()
+	session, resp, err := k.frontend.FrontendAPI.ToSession(ctx).
+		XSessionToken(sessionToken).
+		Execute()
+
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-			return nil, fmt.Errorf("unauthorized: %w", err)
+			return nil, fmt.Errorf("unauthorized: invalid or expired session")
 		}
 		return nil, fmt.Errorf("failed to validate session: %w", err)
 	}
@@ -52,68 +55,142 @@ func (k *KratosClient) ToSession(ctx context.Context, cookie string, token strin
 	return session, nil
 }
 
-// CreateLoginFlow creates a new login flow
+// CreateLoginFlow creates a new native login flow
 func (k *KratosClient) CreateLoginFlow(ctx context.Context) (*ory.LoginFlow, error) {
 	flow, resp, err := k.frontend.FrontendAPI.CreateNativeLoginFlow(ctx).Execute()
-
 	if err != nil {
-		return nil, fmt.Errorf("failed to create login flow: %w (status: %d)", err, resp.StatusCode)
+		return nil, fmt.Errorf("failed to create login flow: %w (status: %d)", err, getStatusCode(resp))
 	}
-
 	return flow, nil
 }
 
-// CreateRegistrationFlow creates a new registration flow
+// UpdateLoginFlow submits login credentials
+func (k *KratosClient) UpdateLoginFlow(ctx context.Context, flowID string, body ory.UpdateLoginFlowBody) (*ory.SuccessfulNativeLogin, error) {
+	result, resp, err := k.frontend.FrontendAPI.UpdateLoginFlow(ctx).
+		Flow(flowID).
+		UpdateLoginFlowBody(body).
+		Execute()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to update login flow: %w (status: %d)", err, getStatusCode(resp))
+	}
+	return result, nil
+}
+
+// CreateRegistrationFlow creates a new native registration flow
 func (k *KratosClient) CreateRegistrationFlow(ctx context.Context) (*ory.RegistrationFlow, error) {
 	flow, resp, err := k.frontend.FrontendAPI.CreateNativeRegistrationFlow(ctx).Execute()
-
 	if err != nil {
-		return nil, fmt.Errorf("failed to create registration flow: %w (status: %d)", err, resp.StatusCode)
+		return nil, fmt.Errorf("failed to create registration flow: %w (status: %d)", err, getStatusCode(resp))
 	}
-
 	return flow, nil
 }
 
-// GetLoginFlow retrieves an existing login flow
-func (k *KratosClient) GetLoginFlow(ctx context.Context, flowID string,flowBody ory.UpdateLoginFlowBody) (*ory.SuccessfulNativeLogin, error) {
-	flow, resp, err := k.frontend.FrontendAPI.UpdateLoginFlow(ctx).Flow(flowID).UpdateLoginFlowBody(flowBody).Execute()
+// UpdateRegistrationFlow submits registration data
+func (k *KratosClient) UpdateRegistrationFlow(ctx context.Context, flowID string, body ory.UpdateRegistrationFlowBody) (*ory.SuccessfulNativeRegistration, error) {
+	result, resp, err := k.frontend.FrontendAPI.UpdateRegistrationFlow(ctx).
+		Flow(flowID).
+		UpdateRegistrationFlowBody(body).
+		Execute()
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get login flow: %w (status: %d)", err, resp.StatusCode)
+		return nil, fmt.Errorf("failed to update registration flow: %w (status: %d)", err, getStatusCode(resp))
 	}
-
-	return flow, nil
+	return result, nil
 }
 
-	func (k *KratosClient) Validate_Session(ctx context.Context,sessionToken string) (*ory.Session, error){
-		session, _, err := k.frontend.FrontendAPI.ToSession(ctx).XSessionToken(sessionToken).Execute()
-		fmt.Println(session)
-		return session,err
-	}
-
-// GetRegistrationFlow retrieves an existing registration flow
-func (k *KratosClient) GetRegistrationFlow(ctx context.Context, flowID string,updateRegistrationFlowBody ory.UpdateRegistrationFlowBody) (*ory.SuccessfulNativeRegistration, error) {
-	fmt.Println(flowID)
-	resp, r , err:=	k.frontend.FrontendAPI.UpdateRegistrationFlow(context.Background()).Flow(flowID).UpdateRegistrationFlowBody(updateRegistrationFlowBody).Execute()
-		if err != nil {
-		fmt.Fprintf(os.Stderr, "Error when calling `FrontendAPI.UpdateRegistrationFlow``: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
-	}
-	// response from `UpdateRegistrationFlow`: SuccessfulNativeRegistration
-	fmt.Fprintf(os.Stdout, "Response from `FrontendAPI.UpdateRegistrationFlow`: %v\n", resp)
-	return resp, nil
-	//return flow, nil
-}
-
-// CreateLogoutFlow creates a logout flow
+// CreateLogoutFlow creates a browser logout flow
 func (k *KratosClient) CreateLogoutFlow(ctx context.Context, cookie string) (*ory.LogoutFlow, error) {
 	flow, resp, err := k.frontend.FrontendAPI.CreateBrowserLogoutFlow(ctx).
 		Cookie(cookie).
 		Execute()
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to create logout flow: %w (status: %d)", err, resp.StatusCode)
+		return nil, fmt.Errorf("failed to create logout flow: %w (status: %d)", err, getStatusCode(resp))
+	}
+	return flow, nil
+}
+
+// Helper functions
+
+func getStatusCode(resp *http.Response) int {
+	if resp == nil {
+		return 0
+	}
+	return resp.StatusCode
+}
+
+// ExtractCSRFToken extracts CSRF token from a registration flow
+func ExtractCSRFToken(flow *ory.RegistrationFlow) string {
+	if flow == nil || flow.Ui.Nodes == nil {
+		return ""
 	}
 
-	return flow, nil
+	for _, node := range flow.Ui.Nodes {
+		if node.Attributes.UiNodeInputAttributes != nil {
+			attrs := node.Attributes.UiNodeInputAttributes
+			if attrs.Name == "csrf_token" {
+				if str, ok := attrs.Value.(string); ok {
+					return str
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// ExtractFormFields extracts form fields from a registration flow
+func ExtractFormFields(flow *ory.RegistrationFlow) []map[string]interface{} {
+	fields := make([]map[string]interface{}, 0)
+
+	for _, node := range flow.Ui.Nodes {
+		if node.Attributes.UiNodeInputAttributes != nil {
+			attrs := node.Attributes.UiNodeInputAttributes
+
+			field := map[string]interface{}{
+				"name":     attrs.Name,
+				"type":     attrs.Type,
+				"required": attrs.GetRequired(),
+				"value":    attrs.Value,
+			}
+
+			if node.Meta.Label != nil {
+				field["label"] = node.Meta.Label.Text
+			}
+
+			fields = append(fields, field)
+		}
+	}
+
+	return fields
+}
+
+// BuildPasswordLoginBody creates a login body for password authentication
+func BuildPasswordLoginBody(email, password string) ory.UpdateLoginFlowBody {
+	return ory.UpdateLoginFlowBody{
+		UpdateLoginFlowWithPasswordMethod: &ory.UpdateLoginFlowWithPasswordMethod{
+			Method:     "password",
+			Identifier: email,
+			Password:   password,
+		},
+	}
+}
+
+// BuildPasswordRegistrationBody creates a registration body for password authentication
+func BuildPasswordRegistrationBody(email, password, firstName, lastName string) ory.UpdateRegistrationFlowBody {
+	traits := map[string]interface{}{
+		"email": email,
+		"name": map[string]string{
+			"first": firstName,
+			"last":  lastName,
+		},
+	}
+
+	return ory.UpdateRegistrationFlowBody{
+		UpdateRegistrationFlowWithPasswordMethod: &ory.UpdateRegistrationFlowWithPasswordMethod{
+			Method:   "password",
+			Password: password,
+			Traits:   traits,
+		},
+	}
 }

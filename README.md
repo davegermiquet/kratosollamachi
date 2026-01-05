@@ -1,9 +1,15 @@
 # Go Boilerplate with Chi, LangChainGo, and Kratos
 
-A production-ready Go boilerplate featuring:
+A production-ready Go boilerplate featuring clean architecture, comprehensive testing, and best practices.
+
+## Features
+
 - **Chi** - Lightweight, idiomatic HTTP router
 - **LangChainGo** - LLM integration supporting Ollama, OpenAI, and other providers
 - **Ory Kratos** - Cloud-native authentication and user management
+- **Clean Architecture** - Separation of concerns with interfaces for testability
+- **Comprehensive Tests** - Unit tests with mocks for all components
+- **Structured Errors** - Consistent error handling across the application
 
 ## Project Structure
 
@@ -11,78 +17,124 @@ A production-ready Go boilerplate featuring:
 .
 ├── cmd/
 │   └── server/
-│       └── main.go              # Application entry point
+│       └── main.go                    # Application entry point
 ├── config/
-│   └── config.go                # Configuration management
+│   ├── config.go                      # Configuration management
+│   └── config_test.go                 # Config tests
 ├── internal/
 │   ├── auth/
-│   │   └── kratos.go            # Kratos client integration
+│   │   ├── interfaces.go              # Auth service interfaces
+│   │   └── kratos.go                  # Kratos client implementation
 │   ├── handlers/
-│   │   ├── auth.go              # Authentication handlers
-│   │   └── llm.go               # LLM handlers
+│   │   ├── auth.go                    # Authentication handlers
+│   │   ├── auth_test.go               # Auth handler tests
+│   │   ├── llm.go                     # LLM handlers
+│   │   └── llm_test.go                # LLM handler tests
+│   ├── langchain/
+│   │   ├── interfaces.go              # LLM service interfaces
+│   │   ├── client.go                  # LangChain client wrapper
+│   │   └── client_test.go             # LangChain tests
 │   ├── middleware/
-│   │   └── auth.go              # Authentication middleware
-│   └── langchain/
-│       └── client.go            # LangChain client wrapper
-├── .env.example                 # Environment variables template
-├── go.mod                       # Go module definition
-└── README.md                    # This file
+│   │   ├── auth.go                    # Authentication middleware
+│   │   └── auth_test.go               # Middleware tests
+│   ├── response/
+│   │   └── response.go                # Response helpers
+│   └── validation/
+│       ├── validation.go              # Input validation
+│       └── validation_test.go         # Validation tests
+├── pkg/
+│   └── errors/
+│       ├── errors.go                  # Structured error handling
+│       └── errors_test.go             # Error tests
+├── .env.example                       # Environment variables template
+├── go.mod                             # Go module definition
+├── Makefile                           # Build automation
+└── README.md                          # This file
 ```
 
-## Prerequisites
+## Architecture
+
+### Design Principles
+
+1. **Interface-Based Design**: All external dependencies are abstracted behind interfaces, enabling easy testing and swapping implementations.
+
+2. **Separation of Concerns**:
+   - `handlers/` - HTTP request/response handling
+   - `validation/` - Input validation logic
+   - `response/` - Standardized response formatting
+   - `auth/` - Authentication logic
+   - `langchain/` - LLM integration
+
+3. **Structured Errors**: All errors are typed with codes, messages, and appropriate HTTP status codes.
+
+### Key Interfaces
+
+```go
+// SessionValidator - validates user sessions
+type SessionValidator interface {
+    ValidateSession(ctx context.Context, sessionToken string) (*ory.Session, error)
+}
+
+// LLMService - LLM operations
+type LLMService interface {
+    GenerateContent(ctx context.Context, prompt string, opts ...llms.CallOption) (string, error)
+    Chat(ctx context.Context, messages []llms.MessageContent, opts ...llms.CallOption) (string, error)
+}
+```
+
+## Quick Start
+
+### Prerequisites
 
 - Go 1.22 or higher
-- Ory Kratos running in Kubernetes (or accessible endpoint)
+- Ory Kratos running (or accessible endpoint)
 - LLM provider (Ollama, OpenAI, etc.)
 
-## Setup
-
-### 1. Clone and Install Dependencies
+### Installation
 
 ```bash
+# Clone the repository
+git clone <repository-url>
+cd <project-directory>
+
 # Install dependencies
-go mod download
-go mod tidy
-```
+make install
 
-### 2. Configure Environment
-
-```bash
-# Copy the example environment file
+# Copy environment template
 cp .env.example .env
 
 # Edit .env with your configuration
-# Update KRATOS_PUBLIC_URL and KRATOS_ADMIN_URL to point to your Kubernetes endpoints
-# Example for Kubernetes:
-# KRATOS_PUBLIC_URL=http://kratos-public.default.svc.cluster.local:4433
-# KRATOS_ADMIN_URL=http://kratos-admin.default.svc.cluster.local:4434
-
-# Configure your LLM provider:
-# For Ollama:
-# LLM_PROVIDER=ollama
-# LLM_MODEL=llama2
-# LLM_BASE_URL=http://localhost:11434
-# LLM_API_KEY=
-
-# For OpenAI:
-# LLM_PROVIDER=openai
-# LLM_MODEL=gpt-4
-# LLM_BASE_URL=
-# LLM_API_KEY=your-openai-api-key
 ```
 
-### 3. Run the Application
+### Running
 
 ```bash
 # Development
-go run cmd/server/main.go
+make run
+
+# With hot reload (requires air)
+make dev
 
 # Build and run
-go build -o server cmd/server/main.go
+make build
 ./server
 ```
 
-The server will start on `http://localhost:8080` by default.
+### Testing
+
+```bash
+# Run all tests
+make test
+
+# Run with verbose output
+make test-verbose
+
+# Run with race detector
+make test-race
+
+# Generate coverage report
+make coverage
+```
 
 ## API Endpoints
 
@@ -92,16 +144,30 @@ The server will start on `http://localhost:8080` by default.
 GET /health
 ```
 
-### Authentication Endpoints
+Response:
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0"
+}
+```
+
+### Authentication
 
 #### Create Login Flow
 ```bash
 GET /auth/login
 ```
 
-#### Get Login Flow
+#### Submit Login
 ```bash
-GET /auth/login/flow?flow=<flow_id>
+POST /auth/login/flow?flow=<flow_id>
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "pass": "password123"
+}
 ```
 
 #### Create Registration Flow
@@ -109,29 +175,39 @@ GET /auth/login/flow?flow=<flow_id>
 GET /auth/registration
 ```
 
-#### Get Registration Flow
+#### Submit Registration
 ```bash
-GET /auth/registration/flow?flow=<flow_id>
+POST /auth/registration/flow?flow=<flow_id>
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "pass": "password123",
+  "first_name": "John",
+  "last_name": "Doe"
+}
 ```
 
-#### Get Current Session (Protected)
+#### Get Current Session
 ```bash
 GET /auth/whoami
-Authorization: Bearer <session_token>
+X-Session-Token: <session_token>
 ```
 
-#### Logout (Protected)
+#### Logout
 ```bash
 POST /auth/logout
 Cookie: ory_kratos_session=<session_cookie>
 ```
 
-### LLM Endpoints (All Protected)
+### LLM Endpoints (Protected)
 
-#### Chat Completion
+All LLM endpoints require authentication via `X-Session-Token` header.
+
+#### Chat
 ```bash
 POST /llm/chat
-Authorization: Bearer <session_token>
+X-Session-Token: <session_token>
 Content-Type: application/json
 
 {
@@ -149,184 +225,131 @@ Response:
 }
 ```
 
-#### Text Generation
+#### Generate
 ```bash
 POST /llm/generate
-Authorization: Bearer <session_token>
+X-Session-Token: <session_token>
 Content-Type: application/json
 
 {
-  "prompt": "Write a story about..."
+  "prompt": "Write a haiku about coding"
 }
 ```
 
 Response:
 ```json
 {
-  "content": "Once upon a time..."
+  "content": "Lines of code cascade\nBugs emerge then disappear\nShip it, call it done"
 }
 ```
 
-## Authentication Flow
+## Error Handling
 
-### Login Flow Example
+All errors follow a consistent format:
 
-1. Create a login flow:
-```bash
-curl http://localhost:8080/auth/login
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "email is required",
+    "details": ""
+  }
+}
 ```
 
-2. This returns a flow with an ID and UI fields. Submit the form to Kratos directly (typically done by frontend)
+### Error Codes
 
-3. After successful login, Kratos sets a session cookie
-
-4. Use the session cookie or token for protected endpoints:
-```bash
-curl -H "Authorization: Bearer <token>" http://localhost:8080/auth/whoami
-```
-
-### Using with Kubernetes Kratos
-
-When running in Kubernetes alongside Kratos:
-
-```yaml
-# Example environment variables
-KRATOS_PUBLIC_URL=http://kratos-public.default.svc.cluster.local:4433
-KRATOS_ADMIN_URL=http://kratos-admin.default.svc.cluster.local:4434
-```
-
-If you're accessing from outside the cluster, use port-forwarding or ingress:
-
-```bash
-# Port forward Kratos public
-kubectl port-forward svc/kratos-public 4433:4433
-
-# Then use in .env
-KRATOS_PUBLIC_URL=http://localhost:4433
-```
-
-## LLM Configuration
-
-### Using Ollama
-
-```env
-LLM_PROVIDER=ollama
-LLM_MODEL=llama2
-LLM_BASE_URL=http://localhost:11434
-LLM_API_KEY=
-```
-
-### Using OpenAI
-
-```env
-LLM_PROVIDER=openai
-LLM_MODEL=gpt-4
-LLM_BASE_URL=
-LLM_API_KEY=sk-your-api-key-here
-```
-
-### Supported Providers
-
-LangChainGo supports multiple LLM providers:
-- **Ollama** - Local LLM inference
-- **OpenAI** - GPT models
-- **Anthropic** - Claude models (configure with custom base URL)
-- And more providers supported by langchaingo
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `VALIDATION_ERROR` | 400 | Input validation failed |
+| `BAD_REQUEST` | 400 | Malformed request |
+| `UNAUTHORIZED` | 401 | Authentication required or failed |
+| `NOT_FOUND` | 404 | Resource not found |
+| `INTERNAL_ERROR` | 500 | Server error |
+| `SERVICE_UNAVAILABLE` | 503 | External service unavailable |
 
 ## Configuration
 
-All configuration is done via environment variables (see `.env.example`):
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 8080 | Server port |
+| `ENVIRONMENT` | development | Environment (development/production) |
+| `KRATOS_PUBLIC_URL` | http://localhost:4433 | Kratos public API |
+| `KRATOS_ADMIN_URL` | http://localhost:4434 | Kratos admin API |
+| `LLM_PROVIDER` | ollama | LLM provider (ollama/openai) |
+| `LLM_MODEL` | llama2 | Model name |
+| `LLM_BASE_URL` | http://localhost:11434 | LLM API base URL |
+| `LLM_API_KEY` | | API key (for OpenAI) |
+| `ALLOWED_ORIGINS` | http://localhost:3000 | CORS allowed origins |
 
-- `PORT` - Server port (default: 8080)
-- `ENVIRONMENT` - Environment name (development/production)
-- `KRATOS_PUBLIC_URL` - Kratos public API endpoint
-- `KRATOS_ADMIN_URL` - Kratos admin API endpoint
-- `LLM_PROVIDER` - LLM provider (ollama, openai, etc.)
-- `LLM_MODEL` - Model name to use
-- `LLM_BASE_URL` - Base URL for the LLM provider
-- `LLM_API_KEY` - API key (if required by provider)
-- `ALLOWED_ORIGINS` - Comma-separated CORS origins
+## Testing Strategy
 
-## Middleware
+### Unit Tests
 
-### AuthMiddleware
+Each package has corresponding `_test.go` files with:
 
-Validates session and rejects unauthenticated requests:
+- **Table-driven tests** for comprehensive coverage
+- **Mock implementations** for external dependencies
+- **Edge case handling** validation
 
-```go
-r.Group(func(r chi.Router) {
-    r.Use(mw.AuthMiddleware(kratosClient))
-    // Protected routes here
-})
+### Running Specific Tests
+
+```bash
+# Test a specific package
+go test -v ./internal/handlers/...
+
+# Test a specific function
+go test -v -run TestAuthHandler_CreateLoginFlow ./internal/handlers/
+
+# Test with coverage for specific package
+go test -coverprofile=coverage.out ./internal/validation/
 ```
 
-### OptionalAuthMiddleware
+## Extending the Application
 
-Validates session but allows unauthenticated requests:
+### Adding a New Handler
 
+1. Define the handler struct and constructor:
 ```go
-r.Group(func(r chi.Router) {
-    r.Use(mw.OptionalAuthMiddleware(kratosClient))
-    // Routes that work with or without auth
-})
-```
+type MyHandler struct {
+    service MyService
+}
 
-## Development
-
-### Adding New Routes
-
-Edit `cmd/server/main.go` and add routes to the Chi router:
-
-```go
-r.Get("/my-route", myHandler)
-```
-
-### Adding New Handlers
-
-Create handlers in `internal/handlers/`:
-
-```go
-func (h *MyHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
-    // Your logic here
+func NewMyHandler(service MyService) *MyHandler {
+    return &MyHandler{service: service}
 }
 ```
 
-## Production Deployment
-
-### Kubernetes Deployment Example
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: api-server
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: api-server
-  template:
-    metadata:
-      labels:
-        app: api-server
-    spec:
-      containers:
-      - name: api-server
-        image: your-registry/api-server:latest
-        ports:
-        - containerPort: 8080
-        env:
-        - name: KRATOS_PUBLIC_URL
-          value: "http://kratos-public.default.svc.cluster.local:4433"
-        - name: KRATOS_ADMIN_URL
-          value: "http://kratos-admin.default.svc.cluster.local:4434"
-        - name: LLM_PROVIDER
-          value: "ollama"
-        - name: LLM_MODEL
-          value: "llama2"
-        - name: LLM_BASE_URL
-          value: "http://ollama.default.svc.cluster.local:11434"
+2. Implement handler methods:
+```go
+func (h *MyHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
+    // Validate input
+    input, err := validation.ValidateMyInput(r.Body)
+    if err != nil {
+        err.WriteJSON(w)
+        return
+    }
+    
+    // Call service
+    result, svcErr := h.service.DoSomething(r.Context(), input)
+    if svcErr != nil {
+        apperrors.NewInternalError("operation failed", svcErr).WriteJSON(w)
+        return
+    }
+    
+    response.Success(w, result)
+}
 ```
+
+3. Add routes in `main.go`:
+```go
+r.Route("/my-resource", func(r chi.Router) {
+    r.Use(middleware.AuthMiddleware(kratosClient))
+    r.Post("/", myHandler.HandleRequest)
+})
+```
+
+4. Write tests with mocks.
 
 ## License
 
