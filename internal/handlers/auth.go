@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"github.com/davegermiquet/kratos-chi-ollama/internal/auth"
-	"github.com/davegermiquet/kratos-chi-ollama/internal/middleware"
 	ory "github.com/ory/client-go"
 )
 
@@ -195,10 +194,32 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // WhoAmI handles GET /auth/whoami - returns current session
 func (h *AuthHandler) WhoAmI(w http.ResponseWriter, r *http.Request) {
-	session := r.Context().Value(middleware.SessionContextKey).(*ory.Session)
-	respondJSON(w, http.StatusOK, session)
+
+	sessionToken:=getSessionToken(r)
+	if sessionToken == "" {
+		http.Error(w, "No session token provided", http.StatusUnauthorized)
+		return
+	}
+	session, err := h.kratos.Validate_Session(r.Context(),sessionToken)
+
+	
+	if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			http.Error(w, "Failed to verify session: "+err.Error(), http.StatusInternalServerError)
+			return 
+		}
+	  respondJSON(w, http.StatusOK, session)
 }
 
+func getSessionToken(r *http.Request) string  {
+	// 1. Try X-Session-Token header (recommended for APIs)
+	if token := r.Header.Get("X-Session-Token"); token != "" {
+		return token
+	}
+
+	return ""
+}
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

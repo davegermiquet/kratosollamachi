@@ -85,6 +85,12 @@ func (k *KratosClient) GetLoginFlow(ctx context.Context, flowID string,flowBody 
 	return flow, nil
 }
 
+	func (k *KratosClient) Validate_Session(ctx context.Context,sessionToken string) (*ory.Session, error){
+		session, _, err := k.frontend.FrontendAPI.ToSession(ctx).XSessionToken(sessionToken).Execute()
+		fmt.Println(session)
+		return session,err
+	}
+
 // GetRegistrationFlow retrieves an existing registration flow
 func (k *KratosClient) GetRegistrationFlow(ctx context.Context, flowID string,updateRegistrationFlowBody ory.UpdateRegistrationFlowBody) (*ory.SuccessfulNativeRegistration, error) {
 	fmt.Println(flowID)
