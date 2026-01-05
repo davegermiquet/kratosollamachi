@@ -1,15 +1,32 @@
-# Go Boilerplate with Chi, LangChainGo, and Kratos
+# Kratos-Chi-Ollama API
 
-A production-ready Go boilerplate featuring clean architecture, comprehensive testing, and best practices.
+A Go REST API boilerplate with Ory Kratos authentication and LangChain LLM integration.
 
-## Features
+---
 
-- **Chi** - Lightweight, idiomatic HTTP router
-- **LangChainGo** - LLM integration supporting Ollama, OpenAI, and other providers
-- **Ory Kratos** - Cloud-native authentication and user management
-- **Clean Architecture** - Separation of concerns with interfaces for testability
-- **Comprehensive Tests** - Unit tests with mocks for all components
-- **Structured Errors** - Consistent error handling across the application
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Project Structure](#project-structure)
+3. [How It Works](#how-it-works)
+4. [Setup & Installation](#setup--installation)
+5. [Configuration](#configuration)
+6. [API Endpoints](#api-endpoints)
+7. [Code Architecture](#code-architecture)
+8. [Testing](#testing)
+9. [Adding New Features](#adding-new-features)
+
+---
+
+## Overview
+
+This application provides:
+
+- **Authentication** via Ory Kratos (login, registration, session management)
+- **LLM Integration** via LangChain (chat and text generation with Ollama/OpenAI)
+- **Clean Architecture** with interfaces for easy testing and swapping implementations
+
+---
 
 ## Project Structure
 
@@ -17,197 +34,265 @@ A production-ready Go boilerplate featuring clean architecture, comprehensive te
 .
 ├── cmd/
 │   └── server/
-│       └── main.go                    # Application entry point
+│       └── main.go              # Application entry point
 ├── config/
-│   ├── config.go                      # Configuration management
-│   └── config_test.go                 # Config tests
-├── internal/
-│   ├── auth/
-│   │   ├── interfaces.go              # Auth service interfaces
-│   │   └── kratos.go                  # Kratos client implementation
-│   ├── handlers/
-│   │   ├── auth.go                    # Authentication handlers
-│   │   ├── auth_test.go               # Auth handler tests
-│   │   ├── llm.go                     # LLM handlers
-│   │   └── llm_test.go                # LLM handler tests
-│   ├── langchain/
-│   │   ├── interfaces.go              # LLM service interfaces
-│   │   ├── client.go                  # LangChain client wrapper
-│   │   └── client_test.go             # LangChain tests
-│   ├── middleware/
-│   │   ├── auth.go                    # Authentication middleware
-│   │   └── auth_test.go               # Middleware tests
-│   ├── response/
-│   │   └── response.go                # Response helpers
-│   └── validation/
-│       ├── validation.go              # Input validation
-│       └── validation_test.go         # Validation tests
+│   ├── config.go                # Configuration loading & validation
+│   └── config_test.go
 ├── pkg/
 │   └── errors/
-│       ├── errors.go                  # Structured error handling
-│       └── errors_test.go             # Error tests
-├── .env.example                       # Environment variables template
-├── go.mod                             # Go module definition
-├── Makefile                           # Build automation
-└── README.md                          # This file
+│       ├── errors.go            # Structured error types
+│       └── errors_test.go
+├── internal/
+│   ├── auth/
+│   │   ├── interfaces.go        # Auth service interfaces
+│   │   └── kratos.go            # Kratos client implementation
+│   ├── handlers/
+│   │   ├── auth.go              # Auth HTTP handlers
+│   │   ├── auth_test.go
+│   │   ├── llm.go               # LLM HTTP handlers
+│   │   └── llm_test.go
+│   ├── langchain/
+│   │   ├── interfaces.go        # LLM service interfaces
+│   │   ├── client.go            # LangChain client wrapper
+│   │   └── client_test.go
+│   ├── middleware/
+│   │   ├── auth.go              # Authentication middleware
+│   │   └── auth_test.go
+│   ├── response/
+│   │   └── response.go          # JSON response helpers
+│   └── validation/
+│       ├── validation.go        # Input validation functions
+│       └── validation_test.go
+├── go.mod
+├── Makefile
+└── .env.example
 ```
 
-## Architecture
+---
 
-### Design Principles
+## How It Works
 
-1. **Interface-Based Design**: All external dependencies are abstracted behind interfaces, enabling easy testing and swapping implementations.
+### Request Flow
 
-2. **Separation of Concerns**:
-   - `handlers/` - HTTP request/response handling
-   - `validation/` - Input validation logic
-   - `response/` - Standardized response formatting
-   - `auth/` - Authentication logic
-   - `langchain/` - LLM integration
-
-3. **Structured Errors**: All errors are typed with codes, messages, and appropriate HTTP status codes.
-
-### Key Interfaces
-
-```go
-// SessionValidator - validates user sessions
-type SessionValidator interface {
-    ValidateSession(ctx context.Context, sessionToken string) (*ory.Session, error)
-}
-
-// LLMService - LLM operations
-type LLMService interface {
-    GenerateContent(ctx context.Context, prompt string, opts ...llms.CallOption) (string, error)
-    Chat(ctx context.Context, messages []llms.MessageContent, opts ...llms.CallOption) (string, error)
-}
+```
+HTTP Request
+     │
+     ▼
+┌─────────────────┐
+│   Chi Router    │  ← Routes requests to handlers
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Middleware    │  ← AuthMiddleware validates session token
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│    Handler      │  ← Validates input, calls services
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Validation    │  ← Parses & validates request body
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│    Service      │  ← Kratos or LangChain client
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Response      │  ← Formats JSON response
+└─────────────────┘
 ```
 
-## Quick Start
+### Component Responsibilities
+
+| Component | Responsibility |
+|-----------|----------------|
+| `cmd/server/main.go` | Initializes dependencies, sets up routes, starts server |
+| `config/` | Loads environment variables, validates configuration |
+| `pkg/errors/` | Provides structured error types with HTTP status codes |
+| `internal/auth/` | Interfaces + Kratos client for authentication |
+| `internal/langchain/` | Interfaces + LangChain client for LLM operations |
+| `internal/handlers/` | HTTP handlers that process requests |
+| `internal/middleware/` | Extracts session tokens, validates authentication |
+| `internal/validation/` | Validates and parses request bodies |
+| `internal/response/` | Helper functions for JSON responses |
+
+---
+
+## Setup & Installation
 
 ### Prerequisites
 
-- Go 1.22 or higher
-- Ory Kratos running (or accessible endpoint)
-- LLM provider (Ollama, OpenAI, etc.)
+- Go 1.22+
+- Ory Kratos instance running
+- Ollama or OpenAI API access
 
-### Installation
+### Install
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd <project-directory>
+# Clone the repo
+git clone <your-repo-url>
+cd kratos-chi-ollama
 
 # Install dependencies
 make install
 
-# Copy environment template
+# Copy environment file
 cp .env.example .env
 
-# Edit .env with your configuration
+# Edit .env with your settings
+nano .env
+
+# Run the server
+make run
 ```
 
-### Running
+### Build
 
 ```bash
-# Development
-make run
-
-# With hot reload (requires air)
-make dev
-
-# Build and run
 make build
 ./server
 ```
 
-### Testing
+---
 
-```bash
-# Run all tests
-make test
+## Configuration
 
-# Run with verbose output
-make test-verbose
+Edit `.env` file:
 
-# Run with race detector
-make test-race
+```env
+# Server
+PORT=8080
+ENVIRONMENT=development
 
-# Generate coverage report
-make coverage
+# Ory Kratos
+KRATOS_PUBLIC_URL=http://localhost:4433
+KRATOS_ADMIN_URL=http://localhost:4434
+
+# LLM Provider (ollama or openai)
+LLM_PROVIDER=ollama
+LLM_MODEL=llama2
+LLM_BASE_URL=http://localhost:11434
+LLM_API_KEY=
+
+# CORS
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
 ```
+
+---
 
 ## API Endpoints
 
 ### Health Check
 
-```bash
+```
 GET /health
 ```
 
 Response:
 ```json
-{
-  "status": "healthy",
-  "version": "1.0.0"
-}
+{"status": "healthy", "version": "1.0.0"}
 ```
 
-### Authentication
+---
+
+### Authentication Endpoints
 
 #### Create Login Flow
-```bash
+
+```
 GET /auth/login
 ```
 
+Returns a Kratos login flow with form fields.
+
+---
+
 #### Submit Login
-```bash
+
+```
 POST /auth/login/flow?flow=<flow_id>
 Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "pass": "password123"
+  "pass": "yourpassword"
 }
 ```
 
+Returns session token on success.
+
+---
+
 #### Create Registration Flow
-```bash
+
+```
 GET /auth/registration
 ```
 
+Returns:
+```json
+{
+  "flow_id": "abc123",
+  "csrf_token": "xyz",
+  "action": "https://...",
+  "method": "POST",
+  "fields": [...]
+}
+```
+
+---
+
 #### Submit Registration
-```bash
+
+```
 POST /auth/registration/flow?flow=<flow_id>
 Content-Type: application/json
 
 {
-  "email": "user@example.com",
+  "email": "newuser@example.com",
   "pass": "password123",
   "first_name": "John",
   "last_name": "Doe"
 }
 ```
 
-#### Get Current Session
-```bash
+---
+
+#### Get Current Session (Who Am I)
+
+```
 GET /auth/whoami
-X-Session-Token: <session_token>
+X-Session-Token: <your-session-token>
 ```
 
+Returns current user session info.
+
+---
+
 #### Logout
-```bash
+
+```
 POST /auth/logout
 Cookie: ory_kratos_session=<session_cookie>
 ```
 
-### LLM Endpoints (Protected)
+---
 
-All LLM endpoints require authentication via `X-Session-Token` header.
+### LLM Endpoints (Protected - Require Authentication)
+
+All LLM endpoints require `X-Session-Token` header.
 
 #### Chat
-```bash
+
+```
 POST /llm/chat
-X-Session-Token: <session_token>
+X-Session-Token: <your-session-token>
 Content-Type: application/json
 
 {
@@ -220,34 +305,64 @@ Content-Type: application/json
 
 Response:
 ```json
-{
-  "content": "Hello! How can I help you today?"
-}
+{"content": "Hello! How can I help you today?"}
 ```
 
-#### Generate
-```bash
+---
+
+#### Generate Text
+
+```
 POST /llm/generate
-X-Session-Token: <session_token>
+X-Session-Token: <your-session-token>
 Content-Type: application/json
 
 {
-  "prompt": "Write a haiku about coding"
+  "prompt": "Write a poem about coding"
 }
 ```
 
 Response:
 ```json
-{
-  "content": "Lines of code cascade\nBugs emerge then disappear\nShip it, call it done"
+{"content": "Lines of code..."}
+```
+
+---
+
+## Code Architecture
+
+### Interfaces (for testability)
+
+**Auth interfaces** (`internal/auth/interfaces.go`):
+
+```go
+type SessionValidator interface {
+    ValidateSession(ctx context.Context, token string) (*ory.Session, error)
+}
+
+type KratosService interface {
+    SessionValidator
+    LoginFlowManager
+    RegistrationFlowManager
+    LogoutFlowManager
 }
 ```
 
-## Error Handling
+**LLM interface** (`internal/langchain/interfaces.go`):
 
-All errors follow a consistent format:
+```go
+type LLMService interface {
+    GenerateContent(ctx context.Context, prompt string, ...) (string, error)
+    Chat(ctx context.Context, messages []llms.MessageContent, ...) (string, error)
+}
+```
 
-```json
+### Error Handling
+
+All errors use structured types (`pkg/errors/errors.go`):
+
+```go
+// Error response format
 {
   "error": {
     "code": "VALIDATION_ERROR",
@@ -257,60 +372,92 @@ All errors follow a consistent format:
 }
 ```
 
-### Error Codes
+Error codes:
+- `VALIDATION_ERROR` (400)
+- `BAD_REQUEST` (400)
+- `UNAUTHORIZED` (401)
+- `NOT_FOUND` (404)
+- `INTERNAL_ERROR` (500)
+- `SERVICE_UNAVAILABLE` (503)
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `VALIDATION_ERROR` | 400 | Input validation failed |
-| `BAD_REQUEST` | 400 | Malformed request |
-| `UNAUTHORIZED` | 401 | Authentication required or failed |
-| `NOT_FOUND` | 404 | Resource not found |
-| `INTERNAL_ERROR` | 500 | Server error |
-| `SERVICE_UNAVAILABLE` | 503 | External service unavailable |
+### Input Validation
 
-## Configuration
+All input validation in `internal/validation/validation.go`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 8080 | Server port |
-| `ENVIRONMENT` | development | Environment (development/production) |
-| `KRATOS_PUBLIC_URL` | http://localhost:4433 | Kratos public API |
-| `KRATOS_ADMIN_URL` | http://localhost:4434 | Kratos admin API |
-| `LLM_PROVIDER` | ollama | LLM provider (ollama/openai) |
-| `LLM_MODEL` | llama2 | Model name |
-| `LLM_BASE_URL` | http://localhost:11434 | LLM API base URL |
-| `LLM_API_KEY` | | API key (for OpenAI) |
-| `ALLOWED_ORIGINS` | http://localhost:3000 | CORS allowed origins |
-
-## Testing Strategy
-
-### Unit Tests
-
-Each package has corresponding `_test.go` files with:
-
-- **Table-driven tests** for comprehensive coverage
-- **Mock implementations** for external dependencies
-- **Edge case handling** validation
-
-### Running Specific Tests
-
-```bash
-# Test a specific package
-go test -v ./internal/handlers/...
-
-# Test a specific function
-go test -v -run TestAuthHandler_CreateLoginFlow ./internal/handlers/
-
-# Test with coverage for specific package
-go test -coverprofile=coverage.out ./internal/validation/
+```go
+// Example usage in handler
+input, err := validation.ValidateLoginInput(r.Body)
+if err != nil {
+    err.WriteJSON(w)  // Returns structured error
+    return
+}
 ```
 
-## Extending the Application
+Validates:
+- Email format
+- Password length (6+ for login, 8+ for registration)
+- Required fields
+- JSON parsing
 
-### Adding a New Handler
+---
 
-1. Define the handler struct and constructor:
+## Testing
+
+### Run All Tests
+
+```bash
+make test
+```
+
+### Run with Verbose Output
+
+```bash
+make test-verbose
+```
+
+### Run with Coverage
+
+```bash
+make coverage
+# Opens coverage.html report
+```
+
+### Run Specific Package
+
+```bash
+go test -v ./internal/handlers/...
+go test -v ./internal/validation/...
+```
+
+### Test Structure
+
+Each package has mock implementations:
+
 ```go
+// Example mock for testing
+type MockKratosService struct {
+    ValidateSessionFunc func(ctx context.Context, token string) (*ory.Session, error)
+    // ...
+}
+
+func (m *MockKratosService) ValidateSession(ctx context.Context, token string) (*ory.Session, error) {
+    if m.ValidateSessionFunc != nil {
+        return m.ValidateSessionFunc(ctx, token)
+    }
+    return nil, errors.New("not implemented")
+}
+```
+
+---
+
+## Adding New Features
+
+### 1. Add a New Handler
+
+```go
+// internal/handlers/myhandler.go
+package handlers
+
 type MyHandler struct {
     service MyService
 }
@@ -318,38 +465,105 @@ type MyHandler struct {
 func NewMyHandler(service MyService) *MyHandler {
     return &MyHandler{service: service}
 }
-```
 
-2. Implement handler methods:
-```go
-func (h *MyHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
-    // Validate input
+func (h *MyHandler) DoSomething(w http.ResponseWriter, r *http.Request) {
+    // 1. Validate input
     input, err := validation.ValidateMyInput(r.Body)
     if err != nil {
         err.WriteJSON(w)
         return
     }
     
-    // Call service
+    // 2. Call service
     result, svcErr := h.service.DoSomething(r.Context(), input)
     if svcErr != nil {
-        apperrors.NewInternalError("operation failed", svcErr).WriteJSON(w)
+        apperrors.NewInternalError("failed", svcErr).WriteJSON(w)
         return
     }
     
+    // 3. Return response
     response.Success(w, result)
 }
 ```
 
-3. Add routes in `main.go`:
+### 2. Add Route in main.go
+
 ```go
+// cmd/server/main.go
+myHandler := handlers.NewMyHandler(myService)
+
 r.Route("/my-resource", func(r chi.Router) {
-    r.Use(middleware.AuthMiddleware(kratosClient))
-    r.Post("/", myHandler.HandleRequest)
+    r.Use(middleware.AuthMiddleware(kratosClient))  // Protected
+    r.Post("/", myHandler.DoSomething)
 })
 ```
 
-4. Write tests with mocks.
+### 3. Add Validation
+
+```go
+// internal/validation/validation.go
+func ValidateMyInput(body io.Reader) (*MyInput, *apperrors.AppError) {
+    var req struct {
+        Field string `json:"field"`
+    }
+    
+    if err := json.NewDecoder(body).Decode(&req); err != nil {
+        return nil, apperrors.NewValidationError("Invalid JSON", err.Error())
+    }
+    
+    if req.Field == "" {
+        return nil, apperrors.NewValidationError("field is required", "")
+    }
+    
+    return &MyInput{Field: req.Field}, nil
+}
+```
+
+### 4. Add Tests
+
+```go
+// internal/handlers/myhandler_test.go
+func TestMyHandler_DoSomething(t *testing.T) {
+    tests := []struct {
+        name       string
+        body       string
+        wantStatus int
+    }{
+        {
+            name:       "success",
+            body:       `{"field": "value"}`,
+            wantStatus: http.StatusOK,
+        },
+        {
+            name:       "missing field",
+            body:       `{}`,
+            wantStatus: http.StatusBadRequest,
+        },
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // ... test implementation
+        })
+    }
+}
+```
+
+---
+
+## Makefile Commands
+
+| Command | Description |
+|---------|-------------|
+| `make run` | Run the application |
+| `make build` | Build binary |
+| `make test` | Run tests |
+| `make test-verbose` | Run tests with output |
+| `make coverage` | Generate coverage report |
+| `make clean` | Remove build artifacts |
+| `make install` | Install dependencies |
+
+---
 
 ## License
 
