@@ -20,10 +20,8 @@ func NewAuthHandler(kratos *auth.KratosClient) *AuthHandler {
 
 // CreateLoginFlow handles GET /auth/login
 func (h *AuthHandler) CreateLoginFlow(w http.ResponseWriter, r *http.Request) {
-	refresh := r.URL.Query().Get("refresh") == "true"
 
-
-	flow, err := h.kratos.CreateLoginFlow(r.Context(), refresh)
+	flow, err := h.kratos.CreateLoginFlow(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -32,15 +30,30 @@ func (h *AuthHandler) CreateLoginFlow(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, flow)
 }
 
-// GetLoginFlow handles GET /auth/login/flow
+// GetLoginFlow handles POST /auth/login/flow
 func (h *AuthHandler) GetLoginFlow(w http.ResponseWriter, r *http.Request) {
 	flowID := r.URL.Query().Get("flow")
 	if flowID == "" {
 		http.Error(w, "flow parameter is required", http.StatusBadRequest)
 		return
 	}
-
-	flow, err := h.kratos.GetLoginFlow(r.Context(), flowID)
+	bodyBytes, err := io.ReadAll(r.Body)
+	bodyString := string(bodyBytes)
+	fmt.Println(bodyString)
+	var data map[string]interface{}
+    err = json.Unmarshal([]byte(bodyString), &data)
+    if err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+	updateBody := ory.UpdateLoginFlowBody{
+		UpdateLoginFlowWithPasswordMethod: &ory.UpdateLoginFlowWithPasswordMethod{
+			Method:     "password",
+			Identifier: data["email"].(string),
+			Password:   data["pass"].(string),
+		},
+	}
+	flow, err := h.kratos.GetLoginFlow(r.Context(), flowID,updateBody)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

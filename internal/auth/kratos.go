@@ -53,10 +53,8 @@ func (k *KratosClient) ToSession(ctx context.Context, cookie string, token strin
 }
 
 // CreateLoginFlow creates a new login flow
-func (k *KratosClient) CreateLoginFlow(ctx context.Context, refresh bool) (*ory.LoginFlow, error) {
-	flow, resp, err := k.frontend.FrontendAPI.CreateBrowserLoginFlow(ctx).
-		Refresh(refresh).
-		Execute()
+func (k *KratosClient) CreateLoginFlow(ctx context.Context) (*ory.LoginFlow, error) {
+	flow, resp, err := k.frontend.FrontendAPI.CreateNativeLoginFlow(ctx).Execute()
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create login flow: %w (status: %d)", err, resp.StatusCode)
@@ -77,10 +75,8 @@ func (k *KratosClient) CreateRegistrationFlow(ctx context.Context) (*ory.Registr
 }
 
 // GetLoginFlow retrieves an existing login flow
-func (k *KratosClient) GetLoginFlow(ctx context.Context, flowID string) (*ory.LoginFlow, error) {
-	flow, resp, err := k.frontend.FrontendAPI.GetLoginFlow(ctx).
-		Id(flowID).
-		Execute()
+func (k *KratosClient) GetLoginFlow(ctx context.Context, flowID string,flowBody ory.UpdateLoginFlowBody) (*ory.SuccessfulNativeLogin, error) {
+	flow, resp, err := k.frontend.FrontendAPI.UpdateLoginFlow(ctx).Flow(flowID).UpdateLoginFlowBody(flowBody).Execute()
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get login flow: %w (status: %d)", err, resp.StatusCode)
