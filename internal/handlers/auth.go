@@ -146,8 +146,8 @@ func (h *AuthHandler) GetRegistrationFlow(w http.ResponseWriter, r *http.Request
     traits := map[string]interface{}{
     "email": data["email"],
     "name": map[string]string{
-        "first": data['first_name'],
-        "last":  data['last_name'],
+        "first": data["first_name"].(string),
+        "last":  data["last_name"].(string),
     },
 	}
 	flowBody := ory.UpdateRegistrationFlowBody{}
