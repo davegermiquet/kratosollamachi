@@ -496,6 +496,30 @@ go test -v ./internal/handlers/...
 go test -v ./internal/validation/...
 ```
 
+### Run Integration Tests
+
+Integration tests require a running Ory Kratos instance. They test the complete authentication flow end-to-end.
+
+```bash
+# Set environment variables
+export INTEGRATION_TEST=true
+
+# Run integration tests
+go test -v -tags=integration -run TestUserAuthenticationFlow
+
+# Or with timeout
+go test -v -tags=integration -timeout 30s -run TestUserAuthenticationFlow
+```
+
+**Integration Test Flow:**
+1. Creates a registration flow
+2. Registers a new test user
+3. Creates a login flow
+4. Logs in with test credentials
+5. Calls whoami to verify session
+6. Logs out the session
+7. Verifies session is invalid after logout
+
 ### Test Structure
 
 Each package has mock implementations:
@@ -624,8 +648,9 @@ func TestMyHandler_DoSomething(t *testing.T) {
 |---------|-------------|
 | `make run` | Run the application |
 | `make build` | Build binary |
-| `make test` | Run tests |
+| `make test` | Run unit tests |
 | `make test-verbose` | Run tests with output |
+| `make test-integration` | Run integration tests (requires Kratos) |
 | `make coverage` | Generate coverage report |
 | `make clean` | Remove build artifacts |
 | `make install` | Install dependencies |
