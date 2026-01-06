@@ -348,3 +348,188 @@ func TestValidateFlowID(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateVerificationEmailInput(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantEmail   string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:      "valid email",
+			body:      `{"email": "test@example.com"}`,
+			wantEmail: "test@example.com",
+			wantErr:   false,
+		},
+		{
+			name:        "missing email",
+			body:        `{}`,
+			wantErr:     true,
+			errContains: "email is required",
+		},
+		{
+			name:        "empty email",
+			body:        `{"email": ""}`,
+			wantErr:     true,
+			errContains: "email is required",
+		},
+		{
+			name:        "whitespace email",
+			body:        `{"email": "   "}`,
+			wantErr:     true,
+			errContains: "email is required",
+		},
+		{
+			name:        "invalid email format",
+			body:        `{"email": "notanemail"}`,
+			wantErr:     true,
+			errContains: "invalid email format",
+		},
+		{
+			name:        "invalid JSON",
+			body:        `{invalid}`,
+			wantErr:     true,
+			errContains: "Invalid JSON",
+		},
+		{
+			name:      "email with whitespace trimmed",
+			body:      `{"email": "  test@example.com  "}`,
+			wantEmail: "test@example.com",
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := strings.NewReader(tt.body)
+			result, err := ValidateVerificationEmailInput(reader)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidateVerificationEmailInput() expected error containing %q, got nil", tt.errContains)
+					return
+				}
+				if !strings.Contains(err.Message, tt.errContains) {
+					t.Errorf("ValidateVerificationEmailInput() error = %q, want error containing %q", err.Message, tt.errContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ValidateVerificationEmailInput() unexpected error: %v", err)
+				return
+			}
+
+			if result.Email != tt.wantEmail {
+				t.Errorf("ValidateVerificationEmailInput() Email = %q, want %q", result.Email, tt.wantEmail)
+			}
+		})
+	}
+}
+
+func TestValidateVerificationCodeInput(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantEmail   string
+		wantCode    string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:      "valid input",
+			body:      `{"email": "test@example.com", "code": "123456"}`,
+			wantEmail: "test@example.com",
+			wantCode:  "123456",
+			wantErr:   false,
+		},
+		{
+			name:        "missing email",
+			body:        `{"code": "123456"}`,
+			wantErr:     true,
+			errContains: "email is required",
+		},
+		{
+			name:        "empty email",
+			body:        `{"email": "", "code": "123456"}`,
+			wantErr:     true,
+			errContains: "email is required",
+		},
+		{
+			name:        "invalid email format",
+			body:        `{"email": "notanemail", "code": "123456"}`,
+			wantErr:     true,
+			errContains: "invalid email format",
+		},
+		{
+			name:        "missing code",
+			body:        `{"email": "test@example.com"}`,
+			wantErr:     true,
+			errContains: "code is required",
+		},
+		{
+			name:        "empty code",
+			body:        `{"email": "test@example.com", "code": ""}`,
+			wantErr:     true,
+			errContains: "code is required",
+		},
+		{
+			name:        "code too short",
+			body:        `{"email": "test@example.com", "code": "12345"}`,
+			wantErr:     true,
+			errContains: "at least 6 characters",
+		},
+		{
+			name:        "whitespace code",
+			body:        `{"email": "test@example.com", "code": "   "}`,
+			wantErr:     true,
+			errContains: "code is required",
+		},
+		{
+			name:        "invalid JSON",
+			body:        `{invalid}`,
+			wantErr:     true,
+			errContains: "Invalid JSON",
+		},
+		{
+			name:      "valid with trimming",
+			body:      `{"email": "  test@example.com  ", "code": "  123456  "}`,
+			wantEmail: "test@example.com",
+			wantCode:  "123456",
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := strings.NewReader(tt.body)
+			result, err := ValidateVerificationCodeInput(reader)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidateVerificationCodeInput() expected error containing %q, got nil", tt.errContains)
+					return
+				}
+				if !strings.Contains(err.Message, tt.errContains) {
+					t.Errorf("ValidateVerificationCodeInput() error = %q, want error containing %q", err.Message, tt.errContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ValidateVerificationCodeInput() unexpected error: %v", err)
+				return
+			}
+
+			if result.Email != tt.wantEmail {
+				t.Errorf("ValidateVerificationCodeInput() Email = %q, want %q", result.Email, tt.wantEmail)
+			}
+
+			if result.Code != tt.wantCode {
+				t.Errorf("ValidateVerificationCodeInput() Code = %q, want %q", result.Code, tt.wantCode)
+			}
+		})
+	}
+}

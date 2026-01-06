@@ -110,6 +110,67 @@ func (h *AuthHandler) SubmitRegistration(w http.ResponseWriter, r *http.Request)
 	response.Created(w, result)
 }
 
+// CreateVerificationFlow handles GET /auth/verification
+func (h *AuthHandler) CreateVerificationFlow(w http.ResponseWriter, r *http.Request) {
+	flow, err := h.kratos.CreateVerificationFlow(r.Context())
+	if err != nil {
+		apperrors.NewServiceUnavailableError("Kratos", err).WriteJSON(w)
+		return
+	}
+
+	response.Success(w, flow)
+}
+
+// RequestVerificationEmail handles POST /auth/verification/flow - sends verification email
+func (h *AuthHandler) RequestVerificationEmail(w http.ResponseWriter, r *http.Request) {
+	flowID := r.URL.Query().Get("flow")
+	if err := validation.ValidateFlowID(flowID); err != nil {
+		err.WriteJSON(w)
+		return
+	}
+
+	input, validationErr := validation.ValidateVerificationEmailInput(r.Body)
+	if validationErr != nil {
+		validationErr.WriteJSON(w)
+		return
+	}
+
+	verificationBody := auth.BuildCodeVerificationBody(input.Email)
+
+	flow, err := h.kratos.UpdateVerificationFlow(r.Context(), flowID, verificationBody)
+	if err != nil {
+		apperrors.NewInternalError("failed to send verification email", err).WriteJSON(w)
+		return
+	}
+
+	response.Success(w, flow)
+}
+
+// SubmitVerificationCode handles POST /auth/verification/code - verifies with code
+func (h *AuthHandler) SubmitVerificationCode(w http.ResponseWriter, r *http.Request) {
+	flowID := r.URL.Query().Get("flow")
+	if err := validation.ValidateFlowID(flowID); err != nil {
+		err.WriteJSON(w)
+		return
+	}
+
+	input, validationErr := validation.ValidateVerificationCodeInput(r.Body)
+	if validationErr != nil {
+		validationErr.WriteJSON(w)
+		return
+	}
+
+	verificationBody := auth.BuildCodeVerificationBodySubmit(input.Email,input.Code)
+
+	flow, err := h.kratos.UpdateVerificationFlow(r.Context(), flowID, verificationBody)
+	if err != nil {
+		apperrors.NewBadRequestError("invalid or expired verification code").WriteJSON(w)
+		return
+	}
+
+	response.Success(w, flow)
+}
+
 // Logout handles POST /auth/logout
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	cookie := r.Header.Get("Cookie")

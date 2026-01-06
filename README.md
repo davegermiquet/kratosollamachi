@@ -22,7 +22,7 @@ A Go REST API boilerplate with Ory Kratos authentication and LangChain LLM integ
 
 This application provides:
 
-- **Authentication** via Ory Kratos (login, registration, session management)
+- **Authentication** via Ory Kratos (login, registration, session management, email verification)
 - **LLM Integration** via LangChain (chat and text generation with Ollama/OpenAI)
 - **Clean Architecture** with interfaces for easy testing and swapping implementations
 
@@ -115,7 +115,7 @@ HTTP Request
 | `cmd/server/main.go` | Initializes dependencies, sets up routes, starts server |
 | `config/` | Loads environment variables, validates configuration |
 | `pkg/errors/` | Provides structured error types with HTTP status codes |
-| `internal/auth/` | Interfaces + Kratos client for authentication |
+| `internal/auth/` | Interfaces + Kratos client for authentication and email verification |
 | `internal/langchain/` | Interfaces + LangChain client for LLM operations |
 | `internal/handlers/` | HTTP handlers that process requests |
 | `internal/middleware/` | Extracts session tokens, validates authentication |
@@ -206,7 +206,7 @@ Response:
 #### Create Login Flow
 
 ```
-GET /auth/login
+GET /api/v1/users/auth/login
 ```
 
 Returns a Kratos login flow with form fields.
@@ -216,7 +216,7 @@ Returns a Kratos login flow with form fields.
 #### Submit Login
 
 ```
-POST /auth/login/flow?flow=<flow_id>
+POST /api/v1/users/auth/login/flow?flow=<flow_id>
 Content-Type: application/json
 
 {
@@ -232,7 +232,7 @@ Returns session token on success.
 #### Create Registration Flow
 
 ```
-GET /auth/registration
+GET /api/v1/users/auth/registration
 ```
 
 Returns:
@@ -251,7 +251,7 @@ Returns:
 #### Submit Registration
 
 ```
-POST /auth/registration/flow?flow=<flow_id>
+POST /api/v1/users/auth/registration/flow?flow=<flow_id>
 Content-Type: application/json
 
 {
@@ -264,10 +264,16 @@ Content-Type: application/json
 
 ---
 
+---
+
+### Session Management Endpoints (Protected - Require Authentication)
+
+All session management endpoints require `X-Session-Token` header.
+
 #### Get Current Session (Who Am I)
 
 ```
-GET /auth/whoami
+GET /api/v1/app/misc/whoami
 X-Session-Token: <your-session-token>
 ```
 
@@ -278,7 +284,7 @@ Returns current user session info.
 #### Logout
 
 ```
-POST /auth/logout
+POST /api/v1/app/misc/logout
 Cookie: ory_kratos_session=<session_cookie>
 ```
 
@@ -291,7 +297,7 @@ All LLM endpoints require `X-Session-Token` header.
 #### Chat
 
 ```
-POST /llm/chat
+POST /api/v1/app/llm/chat
 X-Session-Token: <your-session-token>
 Content-Type: application/json
 
@@ -313,7 +319,7 @@ Response:
 #### Generate Text
 
 ```
-POST /llm/generate
+POST /api/v1/app/llm/generate
 X-Session-Token: <your-session-token>
 Content-Type: application/json
 
@@ -329,6 +335,54 @@ Response:
 
 ---
 
+### Email Verification Endpoints (Protected - Require Authentication)
+
+All verification endpoints require `X-Session-Token` header.
+
+#### Create Verification Flow
+
+```
+GET /api/v1/users/verification
+X-Session-Token: <your-session-token>
+```
+
+Returns a Kratos verification flow.
+
+---
+
+#### Request Verification Email
+
+```
+POST /api/v1/users/verification/flow?flow=<flow_id>
+X-Session-Token: <your-session-token>
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
+```
+
+Sends a verification email/link to the logged-in user.
+
+---
+
+#### Submit Verification Code
+
+```
+POST /api/v1/users/verification/code?flow=<flow_id>
+X-Session-Token: <your-session-token>
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "code": "123456"
+}
+```
+
+Verifies the email using the provided code.
+
+---
+
 ## Code Architecture
 
 ### Interfaces (for testability)
@@ -340,11 +394,17 @@ type SessionValidator interface {
     ValidateSession(ctx context.Context, token string) (*ory.Session, error)
 }
 
+type VerificationFlowManager interface {
+    CreateVerificationFlow(ctx context.Context) (*ory.VerificationFlow, error)
+    UpdateVerificationFlow(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error)
+}
+
 type KratosService interface {
     SessionValidator
     LoginFlowManager
     RegistrationFlowManager
     LogoutFlowManager
+    VerificationFlowManager
 }
 ```
 
