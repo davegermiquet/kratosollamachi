@@ -1,19 +1,20 @@
-.PHONY: help run build test clean dev install lint coverage test-verbose test-race
+.PHONY: help run build test clean dev install lint coverage test-verbose test-race test-integration
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  make run          - Run the application"
-	@echo "  make build        - Build the application"
-	@echo "  make dev          - Run with auto-reload (requires air)"
-	@echo "  make test         - Run tests"
-	@echo "  make test-verbose - Run tests with verbose output"
-	@echo "  make test-race    - Run tests with race detector"
-	@echo "  make coverage     - Run tests with coverage report"
-	@echo "  make lint         - Run linter (requires golangci-lint)"
-	@echo "  make clean        - Clean build artifacts"
-	@echo "  make install      - Install dependencies"
-	@echo "  make check        - Run all checks (lint + test)"
+	@echo "  make run              - Run the application"
+	@echo "  make build            - Build the application"
+	@echo "  make dev              - Run with auto-reload (requires air)"
+	@echo "  make test             - Run tests"
+	@echo "  make test-verbose     - Run tests with verbose output"
+	@echo "  make test-race        - Run tests with race detector"
+	@echo "  make test-integration - Run integration tests (requires Kratos)"
+	@echo "  make coverage         - Run tests with coverage report"
+	@echo "  make lint             - Run linter (requires golangci-lint)"
+	@echo "  make clean            - Clean build artifacts"
+	@echo "  make install          - Install dependencies"
+	@echo "  make check            - Run all checks (lint + test)"
 
 # Run the application
 run:
@@ -45,6 +46,11 @@ coverage:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 	@go tool cover -func=coverage.out | tail -1
+
+# Run integration tests (requires Kratos to be running)
+test-integration:
+	@echo "Running integration tests (requires Ory Kratos to be running)..."
+	INTEGRATION_TEST=true go test -v -tags=integration -timeout 30s -run TestUserAuthenticationFlow
 
 # Run linter
 lint:
