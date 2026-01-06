@@ -218,7 +218,7 @@ func BuildPasswordRegistrationBody(email, password, firstName, lastName string) 
 }
 
 // BuildCodeVerificationBody creates a verification body for code method
-func BuildCodeVerificationBody(email, code string) ory.UpdateVerificationFlowBody {
+func BuildCodeVerificationBodySubmit(email, code string) ory.UpdateVerificationFlowBody {
 	return ory.UpdateVerificationFlowBody{
 		UpdateVerificationFlowWithCodeMethod: &ory.UpdateVerificationFlowWithCodeMethod{
 			Method: "code",
@@ -228,12 +228,11 @@ func BuildCodeVerificationBody(email, code string) ory.UpdateVerificationFlowBod
 	}
 }
 
-// BuildLinkVerificationBody creates a verification body for link method
-func BuildLinkVerificationBody(email string) ory.UpdateVerificationFlowBody {
+func BuildCodeVerificationBody(email string) ory.UpdateVerificationFlowBody {
 	return ory.UpdateVerificationFlowBody{
-		UpdateVerificationFlowWithLinkMethod: &ory.UpdateVerificationFlowWithLinkMethod{
-			Method: "link",
-			Email:  email,
+		UpdateVerificationFlowWithCodeMethod: &ory.UpdateVerificationFlowWithCodeMethod{
+			Method: "code",
+			Email:  &email,
 		},
 	}
 }

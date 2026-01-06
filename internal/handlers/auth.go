@@ -135,7 +135,7 @@ func (h *AuthHandler) RequestVerificationEmail(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	verificationBody := auth.BuildLinkVerificationBody(input.Email)
+	verificationBody := auth.BuildCodeVerificationBody(input.Email)
 
 	flow, err := h.kratos.UpdateVerificationFlow(r.Context(), flowID, verificationBody)
 	if err != nil {
@@ -160,7 +160,7 @@ func (h *AuthHandler) SubmitVerificationCode(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	verificationBody := auth.BuildCodeVerificationBody(input.Email, input.Code)
+	verificationBody := auth.BuildCodeVerificationBodySubmit(input.Email,input.Code)
 
 	flow, err := h.kratos.UpdateVerificationFlow(r.Context(), flowID, verificationBody)
 	if err != nil {
