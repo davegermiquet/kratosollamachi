@@ -35,6 +35,18 @@ type VerificationFlowManager interface {
 	UpdateVerificationFlow(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error)
 }
 
+// RecoveryFlowManager manages password recovery flows
+type RecoveryFlowManager interface {
+	CreateRecoveryFlow(ctx context.Context) (*ory.RecoveryFlow, error)
+	UpdateRecoveryFlow(ctx context.Context, flowID string, body ory.UpdateRecoveryFlowBody) (*ory.RecoveryFlow, error)
+}
+
+// SettingsFlowManager manages user settings flows
+type SettingsFlowManager interface {
+	CreateSettingsFlow(ctx context.Context) (*ory.SettingsFlow, error)
+	UpdateSettingsFlow(ctx context.Context, flowID string, body ory.UpdateSettingsFlowBody, sessionToken string) (*ory.SettingsFlow, error)
+}
+
 // KratosService combines all auth operations
 type KratosService interface {
 	SessionValidator
@@ -42,4 +54,6 @@ type KratosService interface {
 	RegistrationFlowManager
 	LogoutFlowManager
 	VerificationFlowManager
+	RecoveryFlowManager
+	SettingsFlowManager
 }

@@ -78,6 +78,13 @@ func main() {
 				r.Post("/registration/flow", authHandler.SubmitRegistration)
 			})
 
+			// Public recovery routes
+			r.Route("/recovery", func(r chi.Router) {
+				r.Get("/", authHandler.CreateRecoveryFlow)
+				r.Post("/flow", authHandler.RequestRecoveryCode)
+				r.Post("/code", authHandler.SubmitRecoveryCode)
+			})
+
 			// Protected verification routes
 			r.Route("/verification", func(r chi.Router) {
 				r.Use(middleware.AuthMiddleware(kratosClient))

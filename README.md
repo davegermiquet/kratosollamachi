@@ -22,7 +22,7 @@ A Go REST API boilerplate with Ory Kratos authentication and LangChain LLM integ
 
 This application provides:
 
-- **Authentication** via Ory Kratos (login, registration, session management, email verification)
+- **Authentication** via Ory Kratos (login, registration, session management, email verification, password recovery)
 - **LLM Integration** via LangChain (chat and text generation with Ollama/OpenAI)
 - **Clean Architecture** with interfaces for easy testing and swapping implementations
 
@@ -115,7 +115,7 @@ HTTP Request
 | `cmd/server/main.go` | Initializes dependencies, sets up routes, starts server |
 | `config/` | Loads environment variables, validates configuration |
 | `pkg/errors/` | Provides structured error types with HTTP status codes |
-| `internal/auth/` | Interfaces + Kratos client for authentication and email verification |
+| `internal/auth/` | Interfaces + Kratos client for authentication, email verification, and password recovery |
 | `internal/langchain/` | Interfaces + LangChain client for LLM operations |
 | `internal/handlers/` | HTTP handlers that process requests |
 | `internal/middleware/` | Extracts session tokens, validates authentication |
@@ -263,6 +263,69 @@ Content-Type: application/json
 ```
 
 ---
+
+### Password Recovery Endpoints (Public)
+
+#### Create Recovery Flow
+
+```
+GET /api/v1/users/recovery
+```
+
+Returns a Kratos recovery flow.
+
+---
+
+#### Request Recovery Code
+
+```
+POST /api/v1/users/recovery/flow?flow=<flow_id>
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
+```
+
+Sends a recovery code to the user's email address.
+
+---
+
+#### Submit Recovery Code and New Password
+
+```
+POST /api/v1/users/recovery/code?flow=<flow_id>
+Content-Type: application/json
+
+{
+  "code": "123456",
+  "password": "NewSecurePassword123!"
+}
+```
+
+Verifies the recovery code and resets the password to the new password. The email is not required in this step as the flow already knows which account is being recovered.
+
+**Implementation Details:**
+
+The password recovery uses Kratos's `continue_transitions` feature, which works as follows:
+
+1. When you submit the recovery code with password, Kratos validates the code but doesn't directly update the password
+2. Instead, Kratos returns a `continue_with` response containing:
+   - A session token (via `ContinueWithSetOrySessionToken`) for authentication
+   - A settings flow (via `ContinueWithSettingsUi`) where the password update actually happens
+3. The API automatically processes these `continue_with` actions:
+   - Extracts the session token
+   - Submits the password to the settings flow using the session token for authentication
+   - Completes the password update
+
+This approach ensures proper security and allows Kratos to handle the full recovery lifecycle natively.
+
+**Challenges Solved:**
+
+- **Browser Redirects**: Initial implementations triggered browser-based flows. Fixed by properly configuring Kratos with `continue_transitions` and handling native flows correctly.
+- **Password Not Updating**: Initially sent password in recovery flow's `transient_payload`, but with `continue_transitions`, the password must be submitted to the subsequent settings flow.
+- **401 Authentication**: Settings flows require authentication. Fixed by extracting the session token from `continue_with` actions and passing it when updating the settings flow.
+- **CSRF Tokens**: Learned that `continue_with` flows don't require CSRF tokens as they're authenticated via the session token.
 
 ---
 
