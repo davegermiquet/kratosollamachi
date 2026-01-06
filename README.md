@@ -285,8 +285,10 @@ Returns current user session info.
 
 ```
 POST /api/v1/app/misc/logout
-Cookie: ory_kratos_session=<session_cookie>
+X-Session-Token: <your-session-token>
 ```
+
+Logs out the current session by disabling it.
 
 ---
 

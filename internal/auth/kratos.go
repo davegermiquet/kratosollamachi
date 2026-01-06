@@ -111,6 +111,23 @@ func (k *KratosClient) CreateLogoutFlow(ctx context.Context, cookie string) (*or
 	return flow, nil
 }
 
+// PerformNativeLogout performs a native logout by disabling the session
+func (k *KratosClient) PerformNativeLogout(ctx context.Context, sessionToken string) error {
+	if sessionToken == "" {
+		return fmt.Errorf("session token is required")
+	}
+
+	resp, err := k.frontend.FrontendAPI.DisableMySession(ctx).
+		XSessionToken(sessionToken).
+		Execute()
+
+	if err != nil {
+		return fmt.Errorf("failed to logout: %w (status: %d)", err, getStatusCode(resp))
+	}
+
+	return nil
+}
+
 // CreateVerificationFlow creates a new native verification flow
 func (k *KratosClient) CreateVerificationFlow(ctx context.Context) (*ory.VerificationFlow, error) {
 	flow, resp, err := k.frontend.FrontendAPI.CreateNativeVerificationFlow(ctx).Execute()

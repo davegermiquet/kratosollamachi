@@ -20,6 +20,7 @@ type MockKratosService struct {
 	CreateRegistrationFlowFunc func(ctx context.Context) (*ory.RegistrationFlow, error)
 	UpdateRegistrationFlowFunc func(ctx context.Context, flowID string, body ory.UpdateRegistrationFlowBody) (*ory.SuccessfulNativeRegistration, error)
 	CreateLogoutFlowFunc       func(ctx context.Context, cookie string) (*ory.LogoutFlow, error)
+	PerformNativeLogoutFunc    func(ctx context.Context, sessionToken string) error
 	CreateVerificationFlowFunc func(ctx context.Context) (*ory.VerificationFlow, error)
 	UpdateVerificationFlowFunc func(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error)
 }
@@ -64,6 +65,13 @@ func (m *MockKratosService) CreateLogoutFlow(ctx context.Context, cookie string)
 		return m.CreateLogoutFlowFunc(ctx, cookie)
 	}
 	return nil, errors.New("not implemented")
+}
+
+func (m *MockKratosService) PerformNativeLogout(ctx context.Context, sessionToken string) error {
+	if m.PerformNativeLogoutFunc != nil {
+		return m.PerformNativeLogoutFunc(ctx, sessionToken)
+	}
+	return errors.New("not implemented")
 }
 
 func (m *MockKratosService) CreateVerificationFlow(ctx context.Context) (*ory.VerificationFlow, error) {
@@ -305,47 +313,42 @@ func TestAuthHandler_WhoAmI(t *testing.T) {
 
 func TestAuthHandler_Logout(t *testing.T) {
 	tests := []struct {
-		name       string
-		cookie     string
-		mockFlow   *ory.LogoutFlow
-		mockErr    error
-		wantStatus int
+		name         string
+		sessionToken string
+		mockErr      error
+		wantStatus   int
 	}{
 		{
-			name:   "success",
-			cookie: "session=abc123",
-			mockFlow: &ory.LogoutFlow{
-				LogoutUrl: "https://example.com/logout",
-			},
-			mockErr:    nil,
-			wantStatus: http.StatusOK,
+			name:         "success",
+			sessionToken: "valid-token-123",
+			mockErr:      nil,
+			wantStatus:   http.StatusOK,
 		},
 		{
-			name:       "missing cookie",
-			cookie:     "",
-			wantStatus: http.StatusBadRequest,
+			name:         "missing session token",
+			sessionToken: "",
+			wantStatus:   http.StatusUnauthorized,
 		},
 		{
-			name:       "kratos error",
-			cookie:     "session=abc123",
-			mockFlow:   nil,
-			mockErr:    errors.New("kratos error"),
-			wantStatus: http.StatusInternalServerError,
+			name:         "kratos error",
+			sessionToken: "valid-token-123",
+			mockErr:      errors.New("kratos error"),
+			wantStatus:   http.StatusInternalServerError,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &MockKratosService{
-				CreateLogoutFlowFunc: func(ctx context.Context, cookie string) (*ory.LogoutFlow, error) {
-					return tt.mockFlow, tt.mockErr
+				PerformNativeLogoutFunc: func(ctx context.Context, sessionToken string) error {
+					return tt.mockErr
 				},
 			}
 
 			handler := NewAuthHandler(mock)
-			req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
-			if tt.cookie != "" {
-				req.Header.Set("Cookie", tt.cookie)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/app/misc/logout", nil)
+			if tt.sessionToken != "" {
+				req.Header.Set("X-Session-Token", tt.sessionToken)
 			}
 			w := httptest.NewRecorder()
 
