@@ -111,6 +111,28 @@ func (k *KratosClient) CreateLogoutFlow(ctx context.Context, cookie string) (*or
 	return flow, nil
 }
 
+// CreateVerificationFlow creates a new native verification flow
+func (k *KratosClient) CreateVerificationFlow(ctx context.Context) (*ory.VerificationFlow, error) {
+	flow, resp, err := k.frontend.FrontendAPI.CreateNativeVerificationFlow(ctx).Execute()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create verification flow: %w (status: %d)", err, getStatusCode(resp))
+	}
+	return flow, nil
+}
+
+// UpdateVerificationFlow submits verification data (email or code)
+func (k *KratosClient) UpdateVerificationFlow(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error) {
+	flow, resp, err := k.frontend.FrontendAPI.UpdateVerificationFlow(ctx).
+		Flow(flowID).
+		UpdateVerificationFlowBody(body).
+		Execute()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to update verification flow: %w (status: %d)", err, getStatusCode(resp))
+	}
+	return flow, nil
+}
+
 // Helper functions
 
 func getStatusCode(resp *http.Response) int {
@@ -191,6 +213,27 @@ func BuildPasswordRegistrationBody(email, password, firstName, lastName string) 
 			Method:   "password",
 			Password: password,
 			Traits:   traits,
+		},
+	}
+}
+
+// BuildCodeVerificationBody creates a verification body for code method
+func BuildCodeVerificationBody(email, code string) ory.UpdateVerificationFlowBody {
+	return ory.UpdateVerificationFlowBody{
+		UpdateVerificationFlowWithCodeMethod: &ory.UpdateVerificationFlowWithCodeMethod{
+			Method: "code",
+			Email:  &email,
+			Code:   &code,
+		},
+	}
+}
+
+// BuildLinkVerificationBody creates a verification body for link method
+func BuildLinkVerificationBody(email string) ory.UpdateVerificationFlowBody {
+	return ory.UpdateVerificationFlowBody{
+		UpdateVerificationFlowWithLinkMethod: &ory.UpdateVerificationFlowWithLinkMethod{
+			Method: "link",
+			Email:  email,
 		},
 	}
 }

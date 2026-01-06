@@ -72,6 +72,9 @@ func main() {
 		r.Post("/login/flow", authHandler.SubmitLogin)
 		r.Get("/registration", authHandler.CreateRegistrationFlow)
 		r.Post("/registration/flow", authHandler.SubmitRegistration)
+		r.Get("/verification", authHandler.CreateVerificationFlow)
+		r.Post("/verification/flow", authHandler.RequestVerificationEmail)
+		r.Post("/verification/code", authHandler.SubmitVerificationCode)
 	})
 
 	// Protected LLM routes

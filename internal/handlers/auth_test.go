@@ -14,12 +14,14 @@ import (
 
 // MockKratosService implements auth.KratosService for testing
 type MockKratosService struct {
-	ValidateSessionFunc       func(ctx context.Context, token string) (*ory.Session, error)
-	CreateLoginFlowFunc       func(ctx context.Context) (*ory.LoginFlow, error)
-	UpdateLoginFlowFunc       func(ctx context.Context, flowID string, body ory.UpdateLoginFlowBody) (*ory.SuccessfulNativeLogin, error)
+	ValidateSessionFunc        func(ctx context.Context, token string) (*ory.Session, error)
+	CreateLoginFlowFunc        func(ctx context.Context) (*ory.LoginFlow, error)
+	UpdateLoginFlowFunc        func(ctx context.Context, flowID string, body ory.UpdateLoginFlowBody) (*ory.SuccessfulNativeLogin, error)
 	CreateRegistrationFlowFunc func(ctx context.Context) (*ory.RegistrationFlow, error)
 	UpdateRegistrationFlowFunc func(ctx context.Context, flowID string, body ory.UpdateRegistrationFlowBody) (*ory.SuccessfulNativeRegistration, error)
-	CreateLogoutFlowFunc      func(ctx context.Context, cookie string) (*ory.LogoutFlow, error)
+	CreateLogoutFlowFunc       func(ctx context.Context, cookie string) (*ory.LogoutFlow, error)
+	CreateVerificationFlowFunc func(ctx context.Context) (*ory.VerificationFlow, error)
+	UpdateVerificationFlowFunc func(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error)
 }
 
 func (m *MockKratosService) ValidateSession(ctx context.Context, token string) (*ory.Session, error) {
@@ -60,6 +62,20 @@ func (m *MockKratosService) UpdateRegistrationFlow(ctx context.Context, flowID s
 func (m *MockKratosService) CreateLogoutFlow(ctx context.Context, cookie string) (*ory.LogoutFlow, error) {
 	if m.CreateLogoutFlowFunc != nil {
 		return m.CreateLogoutFlowFunc(ctx, cookie)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockKratosService) CreateVerificationFlow(ctx context.Context) (*ory.VerificationFlow, error) {
+	if m.CreateVerificationFlowFunc != nil {
+		return m.CreateVerificationFlowFunc(ctx)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockKratosService) UpdateVerificationFlow(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error) {
+	if m.UpdateVerificationFlowFunc != nil {
+		return m.UpdateVerificationFlowFunc(ctx, flowID, body)
 	}
 	return nil, errors.New("not implemented")
 }
@@ -337,6 +353,220 @@ func TestAuthHandler_Logout(t *testing.T) {
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("Logout() status = %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAuthHandler_CreateVerificationFlow(t *testing.T) {
+	tests := []struct {
+		name       string
+		mockFlow   *ory.VerificationFlow
+		mockErr    error
+		wantStatus int
+	}{
+		{
+			name: "success",
+			mockFlow: &ory.VerificationFlow{
+				Id: "verification123",
+			},
+			mockErr:    nil,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "kratos error",
+			mockFlow:   nil,
+			mockErr:    errors.New("kratos unavailable"),
+			wantStatus: http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockKratosService{
+				CreateVerificationFlowFunc: func(ctx context.Context) (*ory.VerificationFlow, error) {
+					return tt.mockFlow, tt.mockErr
+				},
+			}
+
+			handler := NewAuthHandler(mock)
+			req := httptest.NewRequest(http.MethodGet, "/auth/verification", nil)
+			w := httptest.NewRecorder()
+
+			handler.CreateVerificationFlow(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("CreateVerificationFlow() status = %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAuthHandler_RequestVerificationEmail(t *testing.T) {
+	tests := []struct {
+		name       string
+		flowID     string
+		body       string
+		mockFlow   *ory.VerificationFlow
+		mockErr    error
+		wantStatus int
+	}{
+		{
+			name:   "success",
+			flowID: "flow123",
+			body:   `{"email": "test@example.com"}`,
+			mockFlow: &ory.VerificationFlow{
+				Id: "verification123",
+			},
+			mockErr:    nil,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing flow ID",
+			flowID:     "",
+			body:       `{"email": "test@example.com"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "invalid JSON",
+			flowID:     "flow123",
+			body:       `{invalid}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing email",
+			flowID:     "flow123",
+			body:       `{}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "invalid email format",
+			flowID:     "flow123",
+			body:       `{"email": "notanemail"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "kratos error",
+			flowID:     "flow123",
+			body:       `{"email": "test@example.com"}`,
+			mockFlow:   nil,
+			mockErr:    errors.New("kratos error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockKratosService{
+				UpdateVerificationFlowFunc: func(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error) {
+					return tt.mockFlow, tt.mockErr
+				},
+			}
+
+			handler := NewAuthHandler(mock)
+			url := "/auth/verification/flow"
+			if tt.flowID != "" {
+				url += "?flow=" + tt.flowID
+			}
+			req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			handler.RequestVerificationEmail(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("RequestVerificationEmail() status = %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAuthHandler_SubmitVerificationCode(t *testing.T) {
+	tests := []struct {
+		name       string
+		flowID     string
+		body       string
+		mockFlow   *ory.VerificationFlow
+		mockErr    error
+		wantStatus int
+	}{
+		{
+			name:   "success",
+			flowID: "flow123",
+			body:   `{"email": "test@example.com", "code": "123456"}`,
+			mockFlow: &ory.VerificationFlow{
+				Id: "verification123",
+			},
+			mockErr:    nil,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing flow ID",
+			flowID:     "",
+			body:       `{"email": "test@example.com", "code": "123456"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "invalid JSON",
+			flowID:     "flow123",
+			body:       `{invalid}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing email",
+			flowID:     "flow123",
+			body:       `{"code": "123456"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing code",
+			flowID:     "flow123",
+			body:       `{"email": "test@example.com"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "code too short",
+			flowID:     "flow123",
+			body:       `{"email": "test@example.com", "code": "12345"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "invalid email format",
+			flowID:     "flow123",
+			body:       `{"email": "notanemail", "code": "123456"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "kratos error - invalid code",
+			flowID:     "flow123",
+			body:       `{"email": "test@example.com", "code": "123456"}`,
+			mockFlow:   nil,
+			mockErr:    errors.New("invalid code"),
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockKratosService{
+				UpdateVerificationFlowFunc: func(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error) {
+					return tt.mockFlow, tt.mockErr
+				},
+			}
+
+			handler := NewAuthHandler(mock)
+			url := "/auth/verification/code"
+			if tt.flowID != "" {
+				url += "?flow=" + tt.flowID
+			}
+			req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			handler.SubmitVerificationCode(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("SubmitVerificationCode() status = %d, want %d", w.Code, tt.wantStatus)
 			}
 		})
 	}

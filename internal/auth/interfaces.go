@@ -28,10 +28,17 @@ type LogoutFlowManager interface {
 	CreateLogoutFlow(ctx context.Context, cookie string) (*ory.LogoutFlow, error)
 }
 
+// VerificationFlowManager manages email verification flows
+type VerificationFlowManager interface {
+	CreateVerificationFlow(ctx context.Context) (*ory.VerificationFlow, error)
+	UpdateVerificationFlow(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error)
+}
+
 // KratosService combines all auth operations
 type KratosService interface {
 	SessionValidator
 	LoginFlowManager
 	RegistrationFlowManager
 	LogoutFlowManager
+	VerificationFlowManager
 }

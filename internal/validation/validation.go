@@ -40,6 +40,17 @@ type GenerateInput struct {
 	Prompt string
 }
 
+// VerificationEmailInput represents validated verification email request
+type VerificationEmailInput struct {
+	Email string
+}
+
+// VerificationCodeInput represents validated verification code submission
+type VerificationCodeInput struct {
+	Email string
+	Code  string
+}
+
 // ValidateLoginInput validates and parses login request body
 func ValidateLoginInput(body io.Reader) (*LoginInput, *apperrors.AppError) {
 	var data map[string]interface{}
@@ -177,6 +188,60 @@ func ValidateFlowID(flowID string) *apperrors.AppError {
 		return apperrors.NewValidationError("flow parameter is required", "")
 	}
 	return nil
+}
+
+// ValidateVerificationEmailInput validates verification email request
+func ValidateVerificationEmailInput(body io.Reader) (*VerificationEmailInput, *apperrors.AppError) {
+	var req struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
+		return nil, apperrors.NewValidationError("Invalid JSON body", err.Error())
+	}
+
+	email := strings.TrimSpace(req.Email)
+	if email == "" {
+		return nil, apperrors.NewValidationError("email is required", "")
+	}
+
+	if !isValidEmail(email) {
+		return nil, apperrors.NewValidationError("invalid email format", "")
+	}
+
+	return &VerificationEmailInput{Email: email}, nil
+}
+
+// ValidateVerificationCodeInput validates verification code submission
+func ValidateVerificationCodeInput(body io.Reader) (*VerificationCodeInput, *apperrors.AppError) {
+	var req struct {
+		Email string `json:"email"`
+		Code  string `json:"code"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
+		return nil, apperrors.NewValidationError("Invalid JSON body", err.Error())
+	}
+
+	email := strings.TrimSpace(req.Email)
+	if email == "" {
+		return nil, apperrors.NewValidationError("email is required", "")
+	}
+
+	if !isValidEmail(email) {
+		return nil, apperrors.NewValidationError("invalid email format", "")
+	}
+
+	code := strings.TrimSpace(req.Code)
+	if code == "" {
+		return nil, apperrors.NewValidationError("code is required", "")
+	}
+
+	if len(code) < 6 {
+		return nil, apperrors.NewValidationError("code must be at least 6 characters", "")
+	}
+
+	return &VerificationCodeInput{Email: email, Code: code}, nil
 }
 
 func isValidEmail(email string) bool {
