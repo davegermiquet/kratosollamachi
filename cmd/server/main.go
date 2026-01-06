@@ -66,24 +66,43 @@ func main() {
 		})
 	})
 
-	// Public auth routes
-	r.Route("/auth", func(r chi.Router) {
-		r.Get("/login", authHandler.CreateLoginFlow)
-		r.Post("/login/flow", authHandler.SubmitLogin)
-		r.Get("/registration", authHandler.CreateRegistrationFlow)
-		r.Post("/registration/flow", authHandler.SubmitRegistration)
-		r.Get("/verification", authHandler.CreateVerificationFlow)
-		r.Post("/verification/flow", authHandler.RequestVerificationEmail)
-		r.Post("/verification/code", authHandler.SubmitVerificationCode)
-	})
+	// API v1 routes
+	r.Route("/api/v1", func(r chi.Router) {
+		// Users routes
+		r.Route("/users", func(r chi.Router) {
+			// Public auth routes
+			r.Route("/auth", func(r chi.Router) {
+				r.Get("/login", authHandler.CreateLoginFlow)
+				r.Post("/login/flow", authHandler.SubmitLogin)
+				r.Get("/registration", authHandler.CreateRegistrationFlow)
+				r.Post("/registration/flow", authHandler.SubmitRegistration)
+			})
 
-	// Protected LLM routes
-	r.Route("/llm", func(r chi.Router) {
-		r.Use(middleware.AuthMiddleware(kratosClient))
-		r.Post("/chat", llmHandler.Chat)
-		r.Post("/generate", llmHandler.Generate)
-		r.Get("/whoami", authHandler.WhoAmI)
-		r.Post("/logout", authHandler.Logout)
+			// Protected verification routes
+			r.Route("/verification", func(r chi.Router) {
+				r.Use(middleware.AuthMiddleware(kratosClient))
+				r.Get("/", authHandler.CreateVerificationFlow)
+				r.Post("/flow", authHandler.RequestVerificationEmail)
+				r.Post("/code", authHandler.SubmitVerificationCode)
+			})
+		})
+
+		// App routes
+		r.Route("/app", func(r chi.Router) {
+			// Protected LLM routes
+			r.Route("/llm", func(r chi.Router) {
+				r.Use(middleware.AuthMiddleware(kratosClient))
+				r.Post("/chat", llmHandler.Chat)
+				r.Post("/generate", llmHandler.Generate)
+			})
+
+			// Protected misc routes (session management, etc)
+			r.Route("/misc", func(r chi.Router) {
+				r.Use(middleware.AuthMiddleware(kratosClient))
+				r.Get("/whoami", authHandler.WhoAmI)
+				r.Post("/logout", authHandler.Logout)
+			})
+		})
 	})
 
 	// Start server

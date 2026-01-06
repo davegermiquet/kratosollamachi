@@ -4,11 +4,13 @@ This document describes the email verification functionality implemented using O
 
 ## Overview
 
-Email verification allows users to verify their email addresses using either:
+Email verification allows authenticated users to verify their email addresses using either:
 - **Link Method**: User receives an email with a verification link
 - **Code Method**: User receives an email with a verification code to enter manually
 
 This implementation uses Kratos's native verification flow, which is designed for API clients (mobile apps, SPAs, etc.) and does not rely on cookies.
+
+**Important**: All verification endpoints require authentication via `X-Session-Token` header. Users must be logged in to verify their email.
 
 ---
 
@@ -111,45 +113,61 @@ func ValidateVerificationCodeInput(body io.Reader) (*VerificationCodeInput, *app
 
 ### 4. HTTP Handlers (`internal/handlers/auth.go`)
 
-**CreateVerificationFlow** - `GET /auth/verification`
+**CreateVerificationFlow** - `GET /api/v1/users/verification` (Protected)
 ```go
 func (h *AuthHandler) CreateVerificationFlow(w http.ResponseWriter, r *http.Request)
 ```
+- **Requires**: `X-Session-Token` header (enforced by AuthMiddleware)
 - Creates a new verification flow via Kratos
 - Returns flow object with flow ID
 - Returns 503 if Kratos is unavailable
+- Returns 401 if session token is invalid/missing
 
-**RequestVerificationEmail** - `POST /auth/verification/flow?flow={id}`
+**RequestVerificationEmail** - `POST /api/v1/users/verification/flow?flow={id}` (Protected)
 ```go
 func (h *AuthHandler) RequestVerificationEmail(w http.ResponseWriter, r *http.Request)
 ```
+- **Requires**: `X-Session-Token` header (enforced by AuthMiddleware)
 - Validates flow ID from query parameter
 - Validates email input from request body
 - Sends verification email/link via Kratos
 - Returns 400 for validation errors
+- Returns 401 if session token is invalid/missing
 - Returns 500 for Kratos errors
 
-**SubmitVerificationCode** - `POST /auth/verification/code?flow={id}`
+**SubmitVerificationCode** - `POST /api/v1/users/verification/code?flow={id}` (Protected)
 ```go
 func (h *AuthHandler) SubmitVerificationCode(w http.ResponseWriter, r *http.Request)
 ```
+- **Requires**: `X-Session-Token` header (enforced by AuthMiddleware)
 - Validates flow ID from query parameter
 - Validates email and code from request body
 - Submits code for verification via Kratos
 - Returns 400 for invalid/expired codes or validation errors
+- Returns 401 if session token is invalid/missing
 
 ### 5. Routes (`cmd/server/main.go`)
 
-Added to the `/auth` route group (public, no authentication required):
+Added to the `/api/v1/users/verification` route group (protected, requires authentication):
 
 ```go
-r.Route("/auth", func(r chi.Router) {
-    // Existing routes...
-    r.Get("/verification", authHandler.CreateVerificationFlow)
-    r.Post("/verification/flow", authHandler.RequestVerificationEmail)
-    r.Post("/verification/code", authHandler.SubmitVerificationCode)
+r.Route("/api/v1", func(r chi.Router) {
+    r.Route("/users", func(r chi.Router) {
+        // Protected verification routes
+        r.Route("/verification", func(r chi.Router) {
+            r.Use(middleware.AuthMiddleware(kratosClient))  // Requires X-Session-Token
+            r.Get("/", authHandler.CreateVerificationFlow)
+            r.Post("/flow", authHandler.RequestVerificationEmail)
+            r.Post("/code", authHandler.SubmitVerificationCode)
+        })
+    })
 })
 ```
+
+**Notes**:
+- Verification endpoints are under `/api/v1/users/verification` to organize user-related operations
+- All endpoints are protected because users must be authenticated to verify their email address
+- API versioning with `/api/v1` prefix allows for future API changes
 
 ---
 
@@ -157,9 +175,12 @@ r.Route("/auth", func(r chi.Router) {
 
 ### Flow 1: Link-Based Verification
 
+**Prerequisite**: User must be authenticated (have a valid session token from login)
+
 **Step 1: Create Verification Flow**
 ```bash
-GET /auth/verification
+GET /api/v1/users/verification
+X-Session-Token: <your-session-token>
 ```
 
 Response:
@@ -174,7 +195,8 @@ Response:
 
 **Step 2: Request Verification Email with Link**
 ```bash
-POST /auth/verification/flow?flow=verification-flow-id
+POST /api/v1/users/verification/flow?flow=verification-flow-id
+X-Session-Token: <your-session-token>
 Content-Type: application/json
 
 {
@@ -195,14 +217,18 @@ User receives email with verification link and clicks it to verify.
 
 ### Flow 2: Code-Based Verification
 
+**Prerequisite**: User must be authenticated (have a valid session token from login)
+
 **Step 1: Create Verification Flow**
 ```bash
-GET /auth/verification
+GET /api/v1/users/verification
+X-Session-Token: <your-session-token>
 ```
 
 **Step 2: Request Verification Code**
 ```bash
-POST /auth/verification/flow?flow=verification-flow-id
+POST /api/v1/users/verification/flow?flow=verification-flow-id
+X-Session-Token: <your-session-token>
 Content-Type: application/json
 
 {
@@ -214,7 +240,8 @@ User receives email with verification code (e.g., "123456").
 
 **Step 3: Submit Verification Code**
 ```bash
-POST /auth/verification/code?flow=verification-flow-id
+POST /api/v1/users/verification/code?flow=verification-flow-id
+X-Session-Token: <your-session-token>
 Content-Type: application/json
 
 {
@@ -237,6 +264,18 @@ Response on success:
 ## Error Handling
 
 All verification endpoints follow the existing error handling pattern:
+
+**Unauthorized (401 Unauthorized):**
+```json
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "invalid or expired session",
+    "details": ""
+  }
+}
+```
+**Note**: This error is returned if the `X-Session-Token` header is missing or invalid (enforced by AuthMiddleware).
 
 **Validation Errors (400 Bad Request):**
 ```json
@@ -375,7 +414,9 @@ The verification feature integrates seamlessly with existing patterns:
 - **Validation**: Uses `internal/validation/validation.go` pattern
 - **Response Formatting**: Uses `internal/response/response.go`
 - **Mock Testing**: Extends existing mock pattern in test files
-- **Route Organization**: Follows existing `/auth/*` route structure
+- **Route Organization**: Follows `/api/v1` versioned structure with domain-based organization (user operations under `/users/*`)
+- **Authentication**: Uses `middleware.AuthMiddleware` to enforce session-based authentication
+- **API Versioning**: Part of the `/api/v1` prefix for forward compatibility
 
 ---
 
