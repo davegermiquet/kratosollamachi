@@ -111,6 +111,18 @@ func (k *KratosClient) CreateLogoutFlow(ctx context.Context, cookie string) (*or
 	return flow, nil
 }
 
+// PerformNativeLogout performs a native logout by disabling the session
+func (k *KratosClient) PerformNativeLogout(ctx context.Context, sessionToken ory.PerformNativeLogoutBody) error {
+	
+	resp, err := k.frontend.FrontendAPI.PerformNativeLogout(ctx).PerformNativeLogoutBody(sessionToken).Execute()
+
+	if err != nil {
+		return fmt.Errorf("failed to logout: %w (status: %d)", err, getStatusCode(resp))
+	}
+
+	return nil
+}
+
 // CreateVerificationFlow creates a new native verification flow
 func (k *KratosClient) CreateVerificationFlow(ctx context.Context) (*ory.VerificationFlow, error) {
 	flow, resp, err := k.frontend.FrontendAPI.CreateNativeVerificationFlow(ctx).Execute()
@@ -187,6 +199,9 @@ func ExtractFormFields(flow *ory.RegistrationFlow) []map[string]interface{} {
 	return fields
 }
 
+func BuildNewPerformNativeLogoutBody(sessionToken string) *ory.PerformNativeLogoutBody{
+	return ory.NewPerformNativeLogoutBody(sessionToken)
+}
 // BuildPasswordLoginBody creates a login body for password authentication
 func BuildPasswordLoginBody(email, password string) ory.UpdateLoginFlowBody {
 	return ory.UpdateLoginFlowBody{

@@ -284,8 +284,15 @@ Returns current user session info.
 #### Logout
 
 ```
-POST /api/v1/app/misc/logout
-Cookie: ory_kratos_session=<session_cookie>
+GET /api/v1/app/misc/logout
+X-Session-Token: <your-session-token>
+```
+
+Logs out the current session by disabling it using Ory's native logout API.
+
+Response:
+```json
+{"message": "Successfully logged out"}
 ```
 
 ---

@@ -26,6 +26,7 @@ type RegistrationFlowManager interface {
 // LogoutFlowManager manages logout flows
 type LogoutFlowManager interface {
 	CreateLogoutFlow(ctx context.Context, cookie string) (*ory.LogoutFlow, error)
+	PerformNativeLogout(ctx context.Context, sessionToken ory.PerformNativeLogoutBody) error
 }
 
 // VerificationFlowManager manages email verification flows

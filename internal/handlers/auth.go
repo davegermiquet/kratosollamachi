@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-
 	"github.com/davegermiquet/kratos-chi-ollama/internal/auth"
 	"github.com/davegermiquet/kratos-chi-ollama/internal/middleware"
 	"github.com/davegermiquet/kratos-chi-ollama/internal/response"
@@ -171,21 +170,22 @@ func (h *AuthHandler) SubmitVerificationCode(w http.ResponseWriter, r *http.Requ
 	response.Success(w, flow)
 }
 
-// Logout handles POST /auth/logout
+// Logout handles POST /api/v1/app/misc/logout - performs native logout
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	cookie := r.Header.Get("Cookie")
-	if cookie == "" {
-		apperrors.NewBadRequestError("no session cookie provided").WriteJSON(w)
+	sessionToken := middleware.ExtractSessionToken(r)
+	if sessionToken == "" {
+		apperrors.NewUnauthorizedError("no session token provided").WriteJSON(w)
 		return
 	}
+	sessionBody := auth.BuildNewPerformNativeLogoutBody	(sessionToken)
 
-	flow, err := h.kratos.CreateLogoutFlow(r.Context(), cookie)
+	err := h.kratos.PerformNativeLogout(r.Context(), *sessionBody)
 	if err != nil {
-		apperrors.NewInternalError("failed to create logout flow", err).WriteJSON(w)
+		apperrors.NewInternalError("failed to logout", err).WriteJSON(w)
 		return
 	}
 
-	response.Success(w, flow)
+	response.Success(w, map[string]string{"message": "Successfully logged out"})
 }
 
 // WhoAmI handles GET /auth/whoami - returns current session

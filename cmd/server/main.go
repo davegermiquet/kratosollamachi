@@ -66,7 +66,7 @@ func main() {
 		})
 	})
 
-	// API v1 routes
+	// API v1 routesl
 	r.Route("/api/v1", func(r chi.Router) {
 		// Users routes
 		r.Route("/users", func(r chi.Router) {
@@ -100,7 +100,7 @@ func main() {
 			r.Route("/misc", func(r chi.Router) {
 				r.Use(middleware.AuthMiddleware(kratosClient))
 				r.Get("/whoami", authHandler.WhoAmI)
-				r.Post("/logout", authHandler.Logout)
+				r.Get("/logout", authHandler.Logout)
 			})
 		})
 	})
