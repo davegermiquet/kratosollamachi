@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-
 	"github.com/davegermiquet/kratos-chi-ollama/internal/auth"
 	"github.com/davegermiquet/kratos-chi-ollama/internal/middleware"
 	"github.com/davegermiquet/kratos-chi-ollama/internal/response"
@@ -178,8 +177,9 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		apperrors.NewUnauthorizedError("no session token provided").WriteJSON(w)
 		return
 	}
+	sessionBody := auth.BuildNewPerformNativeLogoutBody	(sessionToken)
 
-	err := h.kratos.PerformNativeLogout(r.Context(), sessionToken)
+	err := h.kratos.PerformNativeLogout(r.Context(), *sessionBody)
 	if err != nil {
 		apperrors.NewInternalError("failed to logout", err).WriteJSON(w)
 		return
