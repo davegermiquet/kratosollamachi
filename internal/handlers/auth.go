@@ -204,3 +204,94 @@ func (h *AuthHandler) WhoAmI(w http.ResponseWriter, r *http.Request) {
 
 	response.Success(w, session)
 }
+
+// CreateRecoveryFlow handles GET /auth/recovery
+func (h *AuthHandler) CreateRecoveryFlow(w http.ResponseWriter, r *http.Request) {
+	flow, err := h.kratos.CreateRecoveryFlow(r.Context())
+	if err != nil {
+		apperrors.NewServiceUnavailableError("Kratos", err).WriteJSON(w)
+		return
+	}
+
+	response.Success(w, flow)
+}
+
+// RequestRecoveryCode handles POST /auth/recovery/flow - sends recovery code
+func (h *AuthHandler) RequestRecoveryCode(w http.ResponseWriter, r *http.Request) {
+	flowID := r.URL.Query().Get("flow")
+	if err := validation.ValidateFlowID(flowID); err != nil {
+		err.WriteJSON(w)
+		return
+	}
+
+	input, validationErr := validation.ValidateRecoveryEmailInput(r.Body)
+	if validationErr != nil {
+		validationErr.WriteJSON(w)
+		return
+	}
+
+	recoveryBody := auth.BuildCodeRecoveryBody(input.Email)
+
+	flow, err := h.kratos.UpdateRecoveryFlow(r.Context(), flowID, recoveryBody)
+	if err != nil {
+		apperrors.NewInternalError("failed to send recovery code", err).WriteJSON(w)
+		return
+	}
+
+	response.Success(w, flow)
+}
+
+// SubmitRecoveryCode handles POST /auth/recovery/code - verifies code and resets password
+func (h *AuthHandler) SubmitRecoveryCode(w http.ResponseWriter, r *http.Request) {
+	flowID := r.URL.Query().Get("flow")
+	if err := validation.ValidateFlowID(flowID); err != nil {
+		err.WriteJSON(w)
+		return
+	}
+
+	input, validationErr := validation.ValidateRecoveryCodeInput(r.Body)
+	if validationErr != nil {
+		validationErr.WriteJSON(w)
+		return
+	}
+
+	recoveryBody := auth.BuildCodeRecoveryBodySubmit(input.Code, input.Password)
+
+	flow, err := h.kratos.UpdateRecoveryFlow(r.Context(), flowID, recoveryBody)
+	if err != nil {
+		apperrors.NewBadRequestError("invalid or expired recovery code").WriteJSON(w)
+		return
+	}
+
+	// Check if there's a continue_with action that needs to be handled
+	// This happens when Kratos requires a settings update to complete recovery
+	if flow.ContinueWith != nil && len(flow.ContinueWith) > 0 {
+		// Extract session token from continue_with actions
+		var sessionToken string
+		for _, action := range flow.ContinueWith {
+			// Look for session token in continue_with actions
+			if action.ContinueWithSetOrySessionToken != nil {
+				sessionToken = action.ContinueWithSetOrySessionToken.OrySessionToken
+			}
+		}
+
+		// Process the continue_with actions
+		for _, action := range flow.ContinueWith {
+			// Handle settings_ui action if present
+			if action.ContinueWithSettingsUi != nil {
+				settingsFlow := action.ContinueWithSettingsUi.Flow
+
+				// Submit the password to the settings flow
+				// For continue_with flows, CSRF is handled differently (session token provides auth)
+				settingsBody := auth.BuildPasswordSettingsBody(input.Password)
+				_, settingsErr := h.kratos.UpdateSettingsFlow(r.Context(), settingsFlow.Id, settingsBody, sessionToken)
+				if settingsErr != nil {
+					apperrors.NewInternalError("failed to update password", settingsErr).WriteJSON(w)
+					return
+				}
+			}
+		}
+	}
+
+	response.Success(w, flow)
+}

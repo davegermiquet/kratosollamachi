@@ -23,6 +23,10 @@ type MockKratosService struct {
 	PerformNativeLogoutFunc    func(ctx context.Context, sessionToken string) error
 	CreateVerificationFlowFunc func(ctx context.Context) (*ory.VerificationFlow, error)
 	UpdateVerificationFlowFunc func(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error)
+	CreateRecoveryFlowFunc     func(ctx context.Context) (*ory.RecoveryFlow, error)
+	UpdateRecoveryFlowFunc     func(ctx context.Context, flowID string, body ory.UpdateRecoveryFlowBody) (*ory.RecoveryFlow, error)
+	CreateSettingsFlowFunc     func(ctx context.Context) (*ory.SettingsFlow, error)
+	UpdateSettingsFlowFunc     func(ctx context.Context, flowID string, body ory.UpdateSettingsFlowBody, sessionToken string) (*ory.SettingsFlow, error)
 }
 
 func (m *MockKratosService) ValidateSession(ctx context.Context, token string) (*ory.Session, error) {
@@ -84,6 +88,34 @@ func (m *MockKratosService) CreateVerificationFlow(ctx context.Context) (*ory.Ve
 func (m *MockKratosService) UpdateVerificationFlow(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error) {
 	if m.UpdateVerificationFlowFunc != nil {
 		return m.UpdateVerificationFlowFunc(ctx, flowID, body)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockKratosService) CreateRecoveryFlow(ctx context.Context) (*ory.RecoveryFlow, error) {
+	if m.CreateRecoveryFlowFunc != nil {
+		return m.CreateRecoveryFlowFunc(ctx)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockKratosService) UpdateRecoveryFlow(ctx context.Context, flowID string, body ory.UpdateRecoveryFlowBody) (*ory.RecoveryFlow, error) {
+	if m.UpdateRecoveryFlowFunc != nil {
+		return m.UpdateRecoveryFlowFunc(ctx, flowID, body)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockKratosService) CreateSettingsFlow(ctx context.Context) (*ory.SettingsFlow, error) {
+	if m.CreateSettingsFlowFunc != nil {
+		return m.CreateSettingsFlowFunc(ctx)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockKratosService) UpdateSettingsFlow(ctx context.Context, flowID string, body ory.UpdateSettingsFlowBody, sessionToken string) (*ory.SettingsFlow, error) {
+	if m.UpdateSettingsFlowFunc != nil {
+		return m.UpdateSettingsFlowFunc(ctx, flowID, body, sessionToken)
 	}
 	return nil, errors.New("not implemented")
 }
@@ -570,6 +602,215 @@ func TestAuthHandler_SubmitVerificationCode(t *testing.T) {
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("SubmitVerificationCode() status = %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAuthHandler_CreateRecoveryFlow(t *testing.T) {
+	tests := []struct {
+		name       string
+		mockFlow   *ory.RecoveryFlow
+		mockErr    error
+		wantStatus int
+	}{
+		{
+			name: "success",
+			mockFlow: &ory.RecoveryFlow{
+				Id:        "recovery-flow-123",
+				ExpiresAt: ptrTime(time.Now().Add(10 * time.Minute)),
+			},
+			mockErr:    nil,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "kratos error",
+			mockFlow:   nil,
+			mockErr:    errors.New("kratos unavailable"),
+			wantStatus: http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockKratos := &MockKratosService{
+				CreateRecoveryFlowFunc: func(ctx context.Context) (*ory.RecoveryFlow, error) {
+					return tt.mockFlow, tt.mockErr
+				},
+			}
+
+			handler := NewAuthHandler(mockKratos)
+			req := httptest.NewRequest(http.MethodGet, "/auth/recovery", nil)
+			w := httptest.NewRecorder()
+
+			handler.CreateRecoveryFlow(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("CreateRecoveryFlow() status = %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAuthHandler_RequestRecoveryCode(t *testing.T) {
+	tests := []struct {
+		name       string
+		flowID     string
+		body       string
+		mockFlow   *ory.RecoveryFlow
+		mockErr    error
+		wantStatus int
+	}{
+		{
+			name:   "success",
+			flowID: "flow-123",
+			body:   `{"email": "user@example.com"}`,
+			mockFlow: &ory.RecoveryFlow{
+				Id: "flow-123",
+			},
+			mockErr:    nil,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing flow ID",
+			flowID:     "",
+			body:       `{"email": "user@example.com"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing email",
+			flowID:     "flow-123",
+			body:       `{}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "invalid email",
+			flowID:     "flow-123",
+			body:       `{"email": "invalid-email"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "invalid json",
+			flowID:     "flow-123",
+			body:       `{invalid}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "kratos error",
+			flowID: "flow-123",
+			body:   `{"email": "user@example.com"}`,
+			mockFlow: nil,
+			mockErr:    errors.New("kratos error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockKratos := &MockKratosService{
+				UpdateRecoveryFlowFunc: func(ctx context.Context, flowID string, body ory.UpdateRecoveryFlowBody) (*ory.RecoveryFlow, error) {
+					return tt.mockFlow, tt.mockErr
+				},
+			}
+
+			handler := NewAuthHandler(mockKratos)
+			url := "/auth/recovery/flow?flow=" + tt.flowID
+			req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			handler.RequestRecoveryCode(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("RequestRecoveryCode() status = %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAuthHandler_SubmitRecoveryCode(t *testing.T) {
+	tests := []struct {
+		name       string
+		flowID     string
+		body       string
+		mockFlow   *ory.RecoveryFlow
+		mockErr    error
+		wantStatus int
+	}{
+		{
+			name:   "success",
+			flowID: "flow-123",
+			body:   `{"code": "123456", "password": "NewSecurePassword123!"}`,
+			mockFlow: &ory.RecoveryFlow{
+				Id: "flow-123",
+			},
+			mockErr:    nil,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing flow ID",
+			flowID:     "",
+			body:       `{"code": "123456", "password": "NewPass123!"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing code",
+			flowID:     "flow-123",
+			body:       `{"password": "NewPass123!"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing password",
+			flowID:     "flow-123",
+			body:       `{"code": "123456"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "password too short",
+			flowID:     "flow-123",
+			body:       `{"code": "123456", "password": "short"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "code too short",
+			flowID:     "flow-123",
+			body:       `{"code": "123", "password": "NewPass123!"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "invalid json",
+			flowID:     "flow-123",
+			body:       `{invalid}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "kratos error - invalid code",
+			flowID:     "flow-123",
+			body:       `{"code": "123456", "password": "NewPass123!"}`,
+			mockFlow:   nil,
+			mockErr:    errors.New("invalid or expired code"),
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockKratos := &MockKratosService{
+				UpdateRecoveryFlowFunc: func(ctx context.Context, flowID string, body ory.UpdateRecoveryFlowBody) (*ory.RecoveryFlow, error) {
+					return tt.mockFlow, tt.mockErr
+				},
+			}
+
+			handler := NewAuthHandler(mockKratos)
+			url := "/auth/recovery/code?flow=" + tt.flowID
+			req := httptest.NewRequest(http.MethodPost, url, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			handler.SubmitRecoveryCode(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("SubmitRecoveryCode() status = %d, want %d", w.Code, tt.wantStatus)
 			}
 		})
 	}

@@ -51,6 +51,17 @@ type VerificationCodeInput struct {
 	Code  string
 }
 
+// RecoveryEmailInput represents validated recovery email request
+type RecoveryEmailInput struct {
+	Email string
+}
+
+// RecoveryCodeInput represents validated recovery code submission with new password
+type RecoveryCodeInput struct {
+	Code     string
+	Password string
+}
+
 // ValidateLoginInput validates and parses login request body
 func ValidateLoginInput(body io.Reader) (*LoginInput, *apperrors.AppError) {
 	var data map[string]interface{}
@@ -242,6 +253,60 @@ func ValidateVerificationCodeInput(body io.Reader) (*VerificationCodeInput, *app
 	}
 
 	return &VerificationCodeInput{Email: email, Code: code}, nil
+}
+
+// ValidateRecoveryEmailInput validates recovery email request
+func ValidateRecoveryEmailInput(body io.Reader) (*RecoveryEmailInput, *apperrors.AppError) {
+	var req struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
+		return nil, apperrors.NewValidationError("Invalid JSON body", err.Error())
+	}
+
+	email := strings.TrimSpace(req.Email)
+	if email == "" {
+		return nil, apperrors.NewValidationError("email is required", "")
+	}
+
+	if !isValidEmail(email) {
+		return nil, apperrors.NewValidationError("invalid email format", "")
+	}
+
+	return &RecoveryEmailInput{Email: email}, nil
+}
+
+// ValidateRecoveryCodeInput validates recovery code submission with new password
+func ValidateRecoveryCodeInput(body io.Reader) (*RecoveryCodeInput, *apperrors.AppError) {
+	var req struct {
+		Code     string `json:"code"`
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
+		return nil, apperrors.NewValidationError("Invalid JSON body", err.Error())
+	}
+
+	code := strings.TrimSpace(req.Code)
+	if code == "" {
+		return nil, apperrors.NewValidationError("code is required", "")
+	}
+
+	if len(code) < 6 {
+		return nil, apperrors.NewValidationError("code must be at least 6 characters", "")
+	}
+
+	password := req.Password
+	if password == "" {
+		return nil, apperrors.NewValidationError("password is required", "")
+	}
+
+	if len(password) < 8 {
+		return nil, apperrors.NewValidationError("password must be at least 8 characters", "")
+	}
+
+	return &RecoveryCodeInput{Code: code, Password: password}, nil
 }
 
 func isValidEmail(email string) bool {
