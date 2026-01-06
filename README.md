@@ -22,7 +22,7 @@ A Go REST API boilerplate with Ory Kratos authentication and LangChain LLM integ
 
 This application provides:
 
-- **Authentication** via Ory Kratos (login, registration, session management)
+- **Authentication** via Ory Kratos (login, registration, session management, email verification)
 - **LLM Integration** via LangChain (chat and text generation with Ollama/OpenAI)
 - **Clean Architecture** with interfaces for easy testing and swapping implementations
 
@@ -115,7 +115,7 @@ HTTP Request
 | `cmd/server/main.go` | Initializes dependencies, sets up routes, starts server |
 | `config/` | Loads environment variables, validates configuration |
 | `pkg/errors/` | Provides structured error types with HTTP status codes |
-| `internal/auth/` | Interfaces + Kratos client for authentication |
+| `internal/auth/` | Interfaces + Kratos client for authentication and email verification |
 | `internal/langchain/` | Interfaces + LangChain client for LLM operations |
 | `internal/handlers/` | HTTP handlers that process requests |
 | `internal/middleware/` | Extracts session tokens, validates authentication |
@@ -264,6 +264,47 @@ Content-Type: application/json
 
 ---
 
+#### Create Verification Flow
+
+```
+GET /auth/verification
+```
+
+Returns a Kratos verification flow.
+
+---
+
+#### Request Verification Email
+
+```
+POST /auth/verification/flow?flow=<flow_id>
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
+```
+
+Sends a verification email/link to the user.
+
+---
+
+#### Submit Verification Code
+
+```
+POST /auth/verification/code?flow=<flow_id>
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "code": "123456"
+}
+```
+
+Verifies the email using the provided code.
+
+---
+
 #### Get Current Session (Who Am I)
 
 ```
@@ -340,11 +381,17 @@ type SessionValidator interface {
     ValidateSession(ctx context.Context, token string) (*ory.Session, error)
 }
 
+type VerificationFlowManager interface {
+    CreateVerificationFlow(ctx context.Context) (*ory.VerificationFlow, error)
+    UpdateVerificationFlow(ctx context.Context, flowID string, body ory.UpdateVerificationFlowBody) (*ory.VerificationFlow, error)
+}
+
 type KratosService interface {
     SessionValidator
     LoginFlowManager
     RegistrationFlowManager
     LogoutFlowManager
+    VerificationFlowManager
 }
 ```
 
