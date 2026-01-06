@@ -1,3 +1,22 @@
+# Ory Kratos Configuration for Native API Flows
+#
+# This configuration enables:
+# - Native API-based authentication (no browser redirects)
+# - Code-based recovery and verification (not link-based)
+# - Continue transitions for recovery (returns continue_with actions)
+# - Settings flow integration for password updates after recovery
+#
+# Key features:
+# - Recovery: Uses 'code' method with continue_transitions
+# - Verification: Uses 'code' method for email verification
+# - Settings: Configured to handle post-recovery password updates
+# - CORS: Enabled for cross-origin API requests
+#
+# For password recovery flow:
+# 1. Client submits recovery code
+# 2. Kratos validates and returns continue_with actions
+# 3. API processes continue_with to complete password update via settings flow
+
 kratos:
   config:
     dsn: 'mysql://kratos-user:replaceme@tcp(mariadb-galera.mysql-ns.svc.cluster.local:3306)/kratos?parseTime=true&sql_mode=%27%27'
@@ -27,33 +46,77 @@ kratos:
       methods:
         password:
           enabled: true
+          config:
+            haveibeenpwned_enabled: false
+            min_password_length: 8
+            identifier_similarity_check_enabled: false
 
-        link:
+        # Use code method for recovery (not link)
+        code:
           enabled: true
           config:
             lifespan: 15m
 
-      flows:
+        # Disable link method for recovery/verification
+        link:
+          enabled: false
 
+      flows:
         settings:
+          # Required for password recovery continuation
           privileged_session_max_age: 15m
+          required_aal: aal1
+          ui_url: http://localhost:4000/settings
+          after:
+            default_browser_return_url: http://localhost:4000/
+            password:
+              default_browser_return_url: http://localhost:4000/
+              hooks:
+                - hook: revoke_active_sessions
 
         recovery:
           enabled: true
+          # Use code method for native API flows
+          use: code
+          ui_url: http://localhost:4000/recovery
+          # Enable continue_transitions for native flows
+          # This returns continue_with actions instead of browser redirects
+          after:
+            default_browser_return_url: http://localhost:4000/
+            hooks:
+              - hook: revoke_active_sessions
+          lifespan: 15m
+          # Notify unknown recipients to prevent user enumeration
+          notify_unknown_recipients: false
 
         verification:
           enabled: true
+          # Use code method for native API flows
+          use: code
+          ui_url: http://localhost:4000/verification
+          after:
+            default_browser_return_url: http://localhost:4000/
+          lifespan: 15m
 
         login:
           lifespan: 10m
+          ui_url: http://localhost:4000/login
 
         registration:
           lifespan: 10m
           enabled: true
+          ui_url: http://localhost:4000/registration
+          after:
+            default_browser_return_url: http://localhost:4000/
+            password:
+              hooks:
+                - hook: session
 
 
   automigration:
     enabled: true
+
+  # Identity schemas define the structure of user data
   identitySchemas:
     "identity.jsonnet" : |
       function(ctx) { user_id: ctx.identity.id }
@@ -109,3 +172,89 @@ kratos:
         }
       }
 
+# ============================================================================
+# CONFIGURATION NOTES
+# ============================================================================
+#
+# CRITICAL SETTINGS FOR NATIVE API FLOWS:
+#
+# 1. RECOVERY FLOW (selfservice.flows.recovery):
+#    - use: code
+#      * REQUIRED for native API flows
+#      * Enables code-based recovery instead of link-based
+#      * Works with continue_transitions to return continue_with actions
+#
+#    - after.hooks: [revoke_active_sessions]
+#      * Revokes old sessions when password is changed
+#      * Prevents session hijacking after password reset
+#
+#    - notify_unknown_recipients: false
+#      * Prevents user enumeration attacks
+#      * Won't send emails to non-existent addresses
+#
+# 2. SETTINGS FLOW (selfservice.flows.settings):
+#    - privileged_session_max_age: 15m
+#      * REQUIRED for password recovery continuation
+#      * Settings flow must accept privileged sessions from recovery
+#
+#    - after.password.hooks: [revoke_active_sessions]
+#      * Revokes other sessions when password changes
+#      * Forces re-login on all devices
+#
+# 3. METHODS (selfservice.methods):
+#    - code.enabled: true
+#      * REQUIRED for native recovery/verification
+#      * Enables code-based flows (6-digit codes)
+#
+#    - link.enabled: false
+#      * Disable link-based flows to force code method
+#      * Links don't work well with native API flows
+#
+#    - password.config.haveibeenpwned_enabled: false
+#      * Optional: Disable HaveIBeenPwned check for faster registration
+#      * Enable in production for better security
+#
+# 4. VERIFICATION FLOW (selfservice.flows.verification):
+#    - use: code
+#      * Use code method for email verification
+#      * Consistent with recovery flow
+#
+# 5. CORS (serve.public.cors):
+#    - enabled: true
+#      * REQUIRED for cross-origin API requests
+#      * Allows frontend apps to call Kratos APIs
+#
+# ============================================================================
+# CONTINUE_TRANSITIONS BEHAVIOR:
+# ============================================================================
+#
+# When recovery flow is submitted with code:
+# 1. Kratos validates the recovery code
+# 2. Instead of browser redirect, returns JSON with continue_with array
+# 3. continue_with contains:
+#    - ContinueWithSetOrySessionToken: Session token for authentication
+#    - ContinueWithSettingsUi: Settings flow for password update
+# 4. API must process continue_with to complete password update
+#
+# This is handled automatically by the SubmitRecoveryCode handler in:
+# internal/handlers/auth.go
+#
+# ============================================================================
+# TROUBLESHOOTING:
+# ============================================================================
+#
+# If you get "browser location change required" errors:
+# - Ensure 'use: code' is set in recovery flow
+# - Ensure 'code' method is enabled in selfservice.methods
+# - Check that continue_transitions is working (Kratos v1.0+)
+#
+# If password doesn't update after recovery:
+# - Ensure settings flow is configured with privileged_session_max_age
+# - Check that session token is being extracted from continue_with
+# - Verify UpdateSettingsFlow is being called with session token
+#
+# If you get 401 on settings flow update:
+# - Session token must be passed via X-Session-Token header
+# - Session token comes from ContinueWithSetOrySessionToken in continue_with
+#
+# ============================================================================

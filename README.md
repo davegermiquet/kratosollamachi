@@ -184,6 +184,64 @@ LLM_API_KEY=
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
 ```
 
+### Kratos Configuration
+
+The application requires specific Kratos configuration for native API flows. See `values.yaml` for the complete configuration.
+
+**Key Requirements:**
+
+1. **Recovery Flow** - Must use `code` method with `continue_transitions`:
+   ```yaml
+   selfservice:
+     flows:
+       recovery:
+         enabled: true
+         use: code  # Required for native flows
+         after:
+           hooks:
+             - hook: revoke_active_sessions
+   ```
+
+2. **Code Method** - Enable code-based authentication:
+   ```yaml
+   selfservice:
+     methods:
+       code:
+         enabled: true
+         config:
+           lifespan: 15m
+       link:
+         enabled: false  # Disable link method
+   ```
+
+3. **Settings Flow** - Configure for password recovery continuation:
+   ```yaml
+   selfservice:
+     flows:
+       settings:
+         privileged_session_max_age: 15m  # Required
+         after:
+           password:
+             hooks:
+               - hook: revoke_active_sessions
+   ```
+
+4. **CORS** - Enable for cross-origin API requests:
+   ```yaml
+   serve:
+     public:
+       cors:
+         enabled: true
+   ```
+
+**Important Notes:**
+- Kratos v1.0+ is required for `continue_transitions` support
+- The `code` method enables 6-digit codes for recovery/verification
+- `continue_transitions` returns JSON with `continue_with` actions instead of browser redirects
+- Settings flow must be configured to accept privileged sessions from recovery
+
+For full configuration details and troubleshooting, see comments in `values.yaml`.
+
 ---
 
 ## API Endpoints
